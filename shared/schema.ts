@@ -38,6 +38,12 @@ export const discoveredPages = pgTable("discovered_pages", {
   statusCode: integer("status_code"),
   contentSummary: text("content_summary"),
   analysisStatus: text("analysis_status").default("pending"), // pending, processing, completed, failed
+  // Deep analysis fields
+  metaDescription: text("meta_description"),
+  pageStructure: text("page_structure"),
+  sectionsData: json("sections_data"), // PageSection[]
+  imagesData: json("images_data"), // PageImage[]
+  headingsData: json("headings_data"), // {level: number, text: string}[]
   createdAt: timestamp("created_at").default(sql`now()`),
 });
 

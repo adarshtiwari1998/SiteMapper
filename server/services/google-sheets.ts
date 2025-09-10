@@ -6,7 +6,13 @@ import type { DetectedTechnology } from './technology-detector';
 export interface ExportData {
   websiteUrl: string;
   technologies: DetectedTechnology[];
-  pages: DiscoveredPage[];
+  pages: (DiscoveredPage & {
+    sectionsData?: any[];
+    imagesData?: any[];
+    headingsData?: any[];
+    metaDescription?: string;
+    pageStructure?: string;
+  })[];
 }
 
 export class GoogleSheetsService {
@@ -59,84 +65,303 @@ export class GoogleSheetsService {
       await sheet.delete();
     }
 
-    // Update the first sheet with overview data
+    // 1. Website Overview Sheet
+    await this.createOverviewSheet(doc, data);
+    
+    // 2. Site Structure Overview Sheet
+    await this.createSiteStructureSheet(doc, data);
+    
+    // 3. Detailed Page Analysis Sheet
+    await this.createPageAnalysisSheet(doc, data);
+    
+    // 4. Images Found Sheet (if images were analyzed)
+    const hasImages = data.pages.some(page => page.imagesData && Array.isArray(page.imagesData) && page.imagesData.length > 0);
+    if (hasImages) {
+      await this.createImagesSheet(doc, data);
+    }
+    
+    // 5. Technologies Sheet
+    await this.createTechnologiesSheet(doc, data);
+    
+    // 6. Page Sections Sheet (if deep analysis was performed)
+    const hasDeepAnalysis = data.pages.some(page => page.sectionsData && Array.isArray(page.sectionsData) && page.sectionsData.length > 0);
+    if (hasDeepAnalysis) {
+      await this.createPageSectionsSheet(doc, data);
+    }
+
+    // Format all sheets
+    await this.formatSheets(doc);
+  }
+
+  private async createOverviewSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
     const overviewSheet = doc.sheetsByIndex[0];
-    await overviewSheet.updateProperties({ title: 'Website Overview' });
+    await overviewSheet.updateProperties({ title: '📊 Website Overview' });
     await overviewSheet.clear();
     
-    // Add overview headers
-    await overviewSheet.setHeaderRow([
-      'Property', 'Value'
-    ]);
+    await overviewSheet.setHeaderRow(['Property', 'Value']);
 
-    // Add overview data
     const overviewRows = [
-      ['Website URL', data.websiteUrl],
-      ['Analysis Date', new Date().toISOString().split('T')[0]],
-      ['Total Pages Found', data.pages.length.toString()],
-      ['Technologies Detected', data.technologies.length.toString()],
+      ['🌐 Website URL', data.websiteUrl],
+      ['📅 Analysis Date', new Date().toISOString().split('T')[0]],
+      ['📄 Total Pages Found', data.pages.length.toString()],
+      ['🔧 Technologies Detected', data.technologies.length.toString()],
       ['', ''],
-      ['DETECTED TECHNOLOGIES', ''],
+      ['📊 ANALYSIS SUMMARY', ''],
       ['', '']
     ];
 
-    // Add technology details
+    // Count page types
+    const pageTypes = data.pages.reduce((acc: Record<string, number>, page) => {
+      const type = page.pageType || 'unknown';
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+
+    Object.entries(pageTypes).forEach(([type, count]) => {
+      overviewRows.push([`📄 ${type.charAt(0).toUpperCase() + type.slice(1)} Pages`, count.toString()]);
+    });
+
+    overviewRows.push(['', '']);
+    overviewRows.push(['🔧 DETECTED TECHNOLOGIES', '']);
+    overviewRows.push(['', '']);
+
     data.technologies.forEach(tech => {
       overviewRows.push([
-        tech.name,
+        `${this.getTechIcon(tech.category)} ${tech.name}`,
         `${tech.category}${tech.version ? ` (v${tech.version})` : ''}`
       ]);
     });
 
     await overviewSheet.addRows(overviewRows);
+  }
 
-    // Create Technologies sheet
+  private async createSiteStructureSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
+    const structureSheet = await doc.addSheet({
+      title: '🏗️ Site Structure',
+      headerValues: [
+        'Page Type',
+        'Page Title', 
+        'URL',
+        'Status',
+        'Page Structure',
+        'Content Summary'
+      ]
+    });
+
+    const structureRows = data.pages
+      .sort((a, b) => {
+        const typeOrder = ['homepage', 'about', 'contact', 'product', 'service', 'blog', 'page'];
+        const aIndex = typeOrder.indexOf(a.pageType || 'page');
+        const bIndex = typeOrder.indexOf(b.pageType || 'page');
+        return aIndex - bIndex;
+      })
+      .map(page => ({
+        'Page Type': `${this.getPageTypeIcon(page.pageType || 'page')} ${(page.pageType || 'page').toUpperCase()}`,
+        'Page Title': page.title || 'No Title',
+        'URL': page.url,
+        'Status': page.statusCode === 200 ? '✅ OK' : `❌ ${page.statusCode}`,
+        'Page Structure': page.pageStructure || 'Not analyzed',
+        'Content Summary': page.contentSummary ? this.truncateText(page.contentSummary, 150) : 'No summary available'
+      }));
+
+    if (structureRows.length > 0) {
+      await structureSheet.addRows(structureRows);
+    }
+  }
+
+  private async createPageAnalysisSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
+    const analysisSheet = await doc.addSheet({
+      title: '🔍 Detailed Page Analysis',
+      headerValues: [
+        'Page Title',
+        'URL', 
+        'Page Type',
+        'Meta Description',
+        'Main Headings',
+        'Content Sections',
+        'Images Count',
+        'Navigation Links'
+      ]
+    });
+
+    const analysisRows = data.pages.map(page => {
+      const headings = page.headingsData && Array.isArray(page.headingsData) 
+        ? page.headingsData.map((h: any) => `H${h.level}: ${h.text}`).join(' | ')
+        : 'No headings found';
+      
+      const sections = page.sectionsData && Array.isArray(page.sectionsData)
+        ? page.sectionsData.filter((s: any) => s.type === 'content').length
+        : 0;
+      
+      const imagesCount = page.imagesData && Array.isArray(page.imagesData)
+        ? page.imagesData.length
+        : 0;
+      
+      const navSections = page.sectionsData && Array.isArray(page.sectionsData)
+        ? page.sectionsData.filter((s: any) => s.type === 'navigation').map((s: any) => s.content).join(' | ')
+        : 'No navigation found';
+
+      return {
+        'Page Title': page.title || 'No Title',
+        'URL': page.url,
+        'Page Type': this.getPageTypeIcon(page.pageType || 'page') + ' ' + (page.pageType || 'page'),
+        'Meta Description': page.metaDescription ? this.truncateText(page.metaDescription, 100) : 'No meta description',
+        'Main Headings': this.truncateText(headings, 200),
+        'Content Sections': `${sections} content sections`,
+        'Images Count': `${imagesCount} images`,
+        'Navigation Links': this.truncateText(navSections, 150)
+      };
+    });
+
+    if (analysisRows.length > 0) {
+      await analysisSheet.addRows(analysisRows);
+    }
+  }
+
+  private async createImagesSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
+    const imagesSheet = await doc.addSheet({
+      title: '🖼️ Images Found',
+      headerValues: [
+        'Page Title',
+        'Page URL',
+        'Image URL',
+        'Alt Text',
+        'Image Title',
+        'Position on Page'
+      ]
+    });
+
+    const imageRows: any[] = [];
+    data.pages.forEach(page => {
+      if (page.imagesData && Array.isArray(page.imagesData)) {
+        page.imagesData.forEach((image: any) => {
+          imageRows.push({
+            'Page Title': page.title || 'No Title',
+            'Page URL': page.url,
+            'Image URL': image.src,
+            'Alt Text': image.alt || 'No alt text',
+            'Image Title': image.title || 'No title',
+            'Position on Page': `Image #${image.position + 1}`
+          });
+        });
+      }
+    });
+
+    if (imageRows.length > 0) {
+      await imagesSheet.addRows(imageRows);
+    }
+  }
+
+  private async createTechnologiesSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
     const techSheet = await doc.addSheet({ 
-      title: 'Technologies',
-      headerValues: ['Technology', 'Version', 'Category', 'Confidence']
+      title: '⚙️ Technologies',
+      headerValues: ['Technology', 'Version', 'Category', 'Confidence', 'Description']
     });
 
     const techRows = data.technologies.map(tech => ({
-      Technology: tech.name,
-      Version: tech.version || '',
+      Technology: `${this.getTechIcon(tech.category)} ${tech.name}`,
+      Version: tech.version || 'Unknown',
       Category: tech.category,
-      Confidence: `${Math.round(tech.confidence * 100)}%`
+      Confidence: `${Math.round(tech.confidence * 100)}%`,
+      Description: this.getTechDescription(tech.name, tech.category)
     }));
 
     if (techRows.length > 0) {
       await techSheet.addRows(techRows);
     }
+  }
 
-    // Create Pages sheet
-    const pagesSheet = await doc.addSheet({
-      title: 'Sitemap',
+  private async createPageSectionsSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
+    const sectionsSheet = await doc.addSheet({
+      title: '📝 Page Sections',
       headerValues: [
-        'URL',
         'Page Title',
-        'Page Type',
-        'Status Code',
-        'Analysis Status',
-        'Content Summary',
-        'Discovered Date'
+        'Page URL',
+        'Section Type',
+        'Section Title',
+        'Content Preview',
+        'Position'
       ]
     });
 
-    const pageRows = data.pages.map(page => ({
-      URL: page.url,
-      'Page Title': page.title || '',
-      'Page Type': page.pageType || '',
-      'Status Code': page.statusCode?.toString() || '',
-      'Analysis Status': page.analysisStatus || 'pending',
-      'Content Summary': page.contentSummary || '',
-      'Discovered Date': page.createdAt?.toISOString().split('T')[0] || ''
-    }));
+    const sectionRows: any[] = [];
+    data.pages.forEach(page => {
+      if (page.sectionsData && Array.isArray(page.sectionsData)) {
+        page.sectionsData.forEach((section: any) => {
+          sectionRows.push({
+            'Page Title': page.title || 'No Title',
+            'Page URL': page.url,
+            'Section Type': `${this.getSectionIcon(section.type)} ${section.type.toUpperCase()}`,
+            'Section Title': section.title || 'No title',
+            'Content Preview': this.truncateText(section.content, 200),
+            'Position': `Section #${section.position + 1}`
+          });
+        });
+      }
+    });
 
-    if (pageRows.length > 0) {
-      await pagesSheet.addRows(pageRows);
+    if (sectionRows.length > 0) {
+      await sectionsSheet.addRows(sectionRows);
     }
+  }
 
-    // Format sheets
-    await this.formatSheets(doc);
+  private getTechIcon(category: string): string {
+    const iconMap: Record<string, string> = {
+      'CMS': '📝',
+      'JavaScript Framework': '⚛️', 
+      'CSS Framework': '🎨',
+      'Programming Language': '💻',
+      'Analytics': '📊',
+      'E-commerce': '🛒',
+      'Web Server': '🖥️',
+      'JavaScript Library': '📚'
+    };
+    return iconMap[category] || '⚙️';
+  }
+
+  private getPageTypeIcon(type: string): string {
+    const iconMap: Record<string, string> = {
+      'homepage': '🏠',
+      'about': 'ℹ️',
+      'contact': '📞',
+      'product': '📦',
+      'service': '🛠️',
+      'blog': '📰',
+      'portfolio': '🎨',
+      'team': '👥',
+      'pricing': '💰'
+    };
+    return iconMap[type] || '📄';
+  }
+
+  private getSectionIcon(type: string): string {
+    const iconMap: Record<string, string> = {
+      'heading': '📋',
+      'content': '📝',
+      'navigation': '🧭',
+      'list': '📜',
+      'table': '📊',
+      'form': '📝'
+    };
+    return iconMap[type] || '📄';
+  }
+
+  private getTechDescription(name: string, category: string): string {
+    const descriptions: Record<string, string> = {
+      'WordPress': 'Popular content management system',
+      'React': 'JavaScript library for building user interfaces',
+      'Vue.js': 'Progressive JavaScript framework',
+      'Angular': 'Platform for building mobile and desktop web applications',
+      'Bootstrap': 'CSS framework for responsive design',
+      'jQuery': 'JavaScript library for DOM manipulation',
+      'Google Analytics': 'Web analytics service'
+    };
+    return descriptions[name] || `${category} technology`;
+  }
+
+  private truncateText(text: string, length: number): string {
+    if (!text) return '';
+    return text.length > length ? text.substring(0, length) + '...' : text;
   }
 
   private async formatSheets(doc: GoogleSpreadsheet): Promise<void> {

@@ -259,7 +259,7 @@ async function processAnalysisJob(jobId: string) {
       deepAnalysis: job.deepAnalysis || false
     });
 
-    // Save discovered pages
+    // Save discovered pages with deep analysis data
     for (const page of pages) {
       await storage.createDiscoveredPage({
         jobId: job.id,
@@ -267,7 +267,13 @@ async function processAnalysisJob(jobId: string) {
         title: page.title,
         pageType: page.type,
         statusCode: page.statusCode,
-        analysisStatus: "pending"
+        analysisStatus: "completed",
+        contentSummary: page.contentSummary,
+        metaDescription: page.metaDescription,
+        pageStructure: page.pageStructure,
+        sectionsData: page.sections,
+        imagesData: page.images,
+        headingsData: page.headings
       });
     }
 
