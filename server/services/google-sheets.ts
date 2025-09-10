@@ -128,8 +128,7 @@ export class GoogleSheetsService {
         'Page Title', 
         'URL',
         'Status',
-        'Page Sections & Content',
-        'Images Found',
+        'Complete Page Content & Structure',
         'AI Content Summary'
       ]
     });
@@ -142,30 +141,37 @@ export class GoogleSheetsService {
         return aIndex - bIndex;
       })
       .map(page => {
-        // Compile all page sections and content
-        let sectionsContent = '';
+        // Compile comprehensive page content including header, content, and footer
+        let completeContent = '';
         if (page.sectionsData && Array.isArray(page.sectionsData)) {
-          const contentSections = page.sectionsData.filter((s: any) => 
-            s.type !== 'navigation' && // Exclude navigation (header/footer)
-            s.type !== 'footer' && 
-            s.type !== 'header'
-          );
-          
-          sectionsContent = contentSections.map((section: any) => {
+          completeContent = page.sectionsData.map((section: any) => {
             const sectionIcon = this.getSectionIcon(section.type);
-            const sectionTitle = section.title ? `${section.title}: ` : '';
-            const preview = this.truncateText(section.content, 100);
-            return `${sectionIcon} ${sectionTitle}${preview}`;
-          }).join('\n\n');
+            const sectionTitle = section.title || 'Content Section';
+            const content = section.content || 'No content';
+            return `${sectionIcon} ${sectionTitle}\n${content}`;
+          }).join('\n\n---\n\n');
         }
-
-        // Compile images data
-        let imagesContent = '';
+        
+        // Add page structure information
+        if (page.pageStructure) {
+          completeContent += `\n\n📈 Page Structure: ${page.pageStructure}`;
+        }
+        
+        // Add meta description if available
+        if (page.metaDescription) {
+          completeContent += `\n\n📝 Meta Description: ${page.metaDescription}`;
+        }
+        
+        // Add additional images not already included in sections
         if (page.imagesData && Array.isArray(page.imagesData)) {
-          imagesContent = page.imagesData.map((img: any) => {
-            const altText = img.alt ? ` (${img.alt})` : '';
+          const additionalImages = page.imagesData.map((img: any) => {
+            const altText = img.alt ? ` - ${img.alt}` : '';
             return `🖼️ ${img.src}${altText}`;
           }).join('\n');
+          
+          if (additionalImages) {
+            completeContent += `\n\n🖼️ Additional Images:\n${additionalImages}`;
+          }
         }
 
         // Enhanced AI summary
@@ -182,8 +188,7 @@ export class GoogleSheetsService {
           'Page Title': page.title || 'No Title',
           'URL': page.url,
           'Status': page.statusCode === 200 ? '✅ OK' : `❌ ${page.statusCode}`,
-          'Page Sections & Content': sectionsContent || 'No content sections analyzed',
-          'Images Found': imagesContent || 'No images found',
+          'Complete Page Content & Structure': completeContent || 'No content analyzed',
           'AI Content Summary': aiSummary
         };
       });

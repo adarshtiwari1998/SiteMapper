@@ -338,40 +338,95 @@ export class WebsiteCrawler {
     const sections: PageSection[] = [];
     let position = 0;
 
-    // Extract headings and their content
+    // Extract header content first
+    $('header, .header, #header, .site-header').each((_, element) => {
+      const $el = $(element);
+      const content = $el.text().trim().replace(/\s+/g, ' ');
+      if (content && content.length > 20) {
+        sections.push({
+          type: 'navigation',
+          title: '🔝 Header Section',
+          content: this.truncateText(content, 400),
+          position: position++
+        });
+      }
+    });
+
+    // Extract headings with comprehensive content
     $('h1, h2, h3, h4, h5, h6').each((_, element) => {
       const $el = $(element);
       const level = parseInt(element.tagName.charAt(1));
       const title = $el.text().trim();
       
-      // Get content after this heading until the next heading of same or higher level
+      // Get all content after this heading until the next heading
       let content = '';
       let $next = $el.next();
       while ($next.length && !$next.is(`h1, h2, h3, h4, h5, h6`)) {
-        if ($next.is('p, div, span, ul, ol, li')) {
-          content += $next.text().trim() + ' ';
+        const elementText = $next.text().trim();
+        if (elementText && elementText.length > 10) {
+          content += elementText + ' ';
         }
         $next = $next.next();
+        
+        // Prevent infinite loops and limit content length
+        if (content.length > 2000) break;
       }
+
+      // Add images found in this section
+      const sectionImages = $el.nextUntil('h1, h2, h3, h4, h5, h6').find('img');
+      let imageInfo = '';
+      sectionImages.each((_, imgElement) => {
+        const $img = $(imgElement);
+        const src = $img.attr('src');
+        const alt = $img.attr('alt') || 'No alt text';
+        if (src) {
+          imageInfo += `\n🖼️ Image: ${alt} (${src})`;
+        }
+      });
 
       sections.push({
         type: 'heading',
         level,
         title,
-        content: content.trim(),
+        content: (content.trim() + imageInfo).trim() || 'No content found',
         position: position++
       });
     });
 
-    // Extract main content areas
-    $('main, article, .content, .main-content, #content').each((_, element) => {
+    // Extract comprehensive body content sections
+    $('main, article, .content, .main-content, #content, .entry-content, .post-content').each((_, element) => {
       const $el = $(element);
-      const content = $el.text().trim();
-      if (content.length > 50) {
+      const content = $el.text().trim().replace(/\s+/g, ' ');
+      if (content.length > 100) {
+        // Extract images within main content
+        let imageInfo = '';
+        $el.find('img').each((_, imgElement) => {
+          const $img = $(imgElement);
+          const src = $img.attr('src');
+          const alt = $img.attr('alt') || 'No alt text';
+          if (src) {
+            imageInfo += `\n🖼️ ${alt} (${src})`;
+          }
+        });
+
         sections.push({
           type: 'content',
-          title: 'Main Content',
-          content: content.substring(0, 500) + (content.length > 500 ? '...' : ''),
+          title: '📄 Main Content Area',
+          content: this.truncateText(content, 1000) + imageInfo,
+          position: position++
+        });
+      }
+    });
+
+    // Extract all paragraphs with substantial content
+    $('p').each((_, element) => {
+      const $el = $(element);
+      const content = $el.text().trim();
+      if (content.length > 100 && !$el.closest('header, footer, nav').length) {
+        sections.push({
+          type: 'content',
+          title: '📝 Paragraph Content',
+          content: this.truncateText(content, 300),
           position: position++
         });
       }
@@ -405,7 +460,26 @@ export class WebsiteCrawler {
       }
     });
 
+    // Extract footer content
+    $('footer, .footer, #footer, .site-footer').each((_, element) => {
+      const $el = $(element);
+      const content = $el.text().trim().replace(/\s+/g, ' ');
+      if (content && content.length > 20) {
+        sections.push({
+          type: 'navigation',
+          title: '🔽 Footer Section',
+          content: this.truncateText(content, 400),
+          position: position++
+        });
+      }
+    });
+
     return sections;
+  }
+
+  private truncateText(text: string, maxLength: number): string {
+    if (!text) return '';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   }
 
   private extractImages($: cheerio.CheerioAPI, currentUrl: string): PageImage[] {

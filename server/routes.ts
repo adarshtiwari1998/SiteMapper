@@ -326,8 +326,8 @@ async function processAnalysisJob(jobId: string) {
             sectionsData: page.sectionsData as any[] || undefined,
             imagesData: page.imagesData as any[] || undefined,
             headingsData: page.headingsData as any[] || undefined,
-            metaDescription: page.metaDescription || undefined,
-            pageStructure: page.pageStructure || undefined
+            metaDescription: page.metaDescription || null,
+            pageStructure: page.pageStructure || null
           }))
         });
         
