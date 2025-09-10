@@ -1,6 +1,6 @@
 import { analysisJobs, discoveredPages, users, userConfigurations, type User, type InsertUser, type AnalysisJob, type InsertAnalysisJob, type DiscoveredPage, type InsertDiscoveredPage, type UserConfiguration, type InsertUserConfiguration } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, isNull } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -119,7 +119,7 @@ export class DatabaseStorage implements IStorage {
   async getDefaultConfiguration(userId?: string): Promise<UserConfiguration | undefined> {
     const [config] = await db.select().from(userConfigurations)
       .where(and(
-        eq(userConfigurations.userId, userId || ''),
+        userId ? eq(userConfigurations.userId, userId) : isNull(userConfigurations.userId),
         eq(userConfigurations.isDefault, true)
       ))
       .orderBy(desc(userConfigurations.createdAt));
@@ -128,7 +128,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllConfigurations(userId?: string): Promise<UserConfiguration[]> {
     return await db.select().from(userConfigurations)
-      .where(eq(userConfigurations.userId, userId || ''))
+      .where(userId ? eq(userConfigurations.userId, userId) : isNull(userConfigurations.userId))
       .orderBy(desc(userConfigurations.createdAt));
   }
 
