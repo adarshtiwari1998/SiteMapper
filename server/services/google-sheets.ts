@@ -68,29 +68,14 @@ export class GoogleSheetsService {
     // 1. Website Overview Sheet
     await this.createOverviewSheet(doc, data);
     
-    // 2. Site Structure Overview Sheet
-    await this.createSiteStructureSheet(doc, data);
+    // 2. Consolidated Site Structure Sheet (includes all page data)
+    await this.createConsolidatedSiteStructureSheet(doc, data);
     
-    // 3. Detailed Page Analysis Sheet
-    await this.createPageAnalysisSheet(doc, data);
-    
-    // 4. Images Found Sheet (if images were analyzed)
-    const hasImages = data.pages.some(page => page.imagesData && Array.isArray(page.imagesData) && page.imagesData.length > 0);
-    if (hasImages) {
-      await this.createImagesSheet(doc, data);
-    }
-    
-    // 5. Technologies Sheet
+    // 3. Technologies Sheet
     await this.createTechnologiesSheet(doc, data);
-    
-    // 6. Page Sections Sheet (if deep analysis was performed)
-    const hasDeepAnalysis = data.pages.some(page => page.sectionsData && Array.isArray(page.sectionsData) && page.sectionsData.length > 0);
-    if (hasDeepAnalysis) {
-      await this.createPageSectionsSheet(doc, data);
-    }
 
-    // Format all sheets
-    await this.formatSheets(doc);
+    // Format all sheets with improved formatting
+    await this.formatSheetsWithAutoResize(doc);
   }
 
   private async createOverviewSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
@@ -133,6 +118,79 @@ export class GoogleSheetsService {
     });
 
     await overviewSheet.addRows(overviewRows);
+  }
+
+  private async createConsolidatedSiteStructureSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
+    const structureSheet = await doc.addSheet({
+      title: '🏗️ Site Structure',
+      headerValues: [
+        'Page Type',
+        'Page Title', 
+        'URL',
+        'Status',
+        'Page Sections & Content',
+        'Images Found',
+        'AI Content Summary'
+      ]
+    });
+
+    const structureRows = data.pages
+      .sort((a, b) => {
+        const typeOrder = ['homepage', 'about', 'contact', 'product', 'service', 'blog', 'page'];
+        const aIndex = typeOrder.indexOf(a.pageType || 'page');
+        const bIndex = typeOrder.indexOf(b.pageType || 'page');
+        return aIndex - bIndex;
+      })
+      .map(page => {
+        // Compile all page sections and content
+        let sectionsContent = '';
+        if (page.sectionsData && Array.isArray(page.sectionsData)) {
+          const contentSections = page.sectionsData.filter((s: any) => 
+            s.type !== 'navigation' && // Exclude navigation (header/footer)
+            s.type !== 'footer' && 
+            s.type !== 'header'
+          );
+          
+          sectionsContent = contentSections.map((section: any) => {
+            const sectionIcon = this.getSectionIcon(section.type);
+            const sectionTitle = section.title ? `${section.title}: ` : '';
+            const preview = this.truncateText(section.content, 100);
+            return `${sectionIcon} ${sectionTitle}${preview}`;
+          }).join('\n\n');
+        }
+
+        // Compile images data
+        let imagesContent = '';
+        if (page.imagesData && Array.isArray(page.imagesData)) {
+          imagesContent = page.imagesData.map((img: any) => {
+            const altText = img.alt ? ` (${img.alt})` : '';
+            return `🖼️ ${img.src}${altText}`;
+          }).join('\n');
+        }
+
+        // Enhanced AI summary
+        let aiSummary = page.contentSummary || 'No summary available';
+        if (page.pageStructure) {
+          aiSummary += `\n\n📋 Structure: ${page.pageStructure}`;
+        }
+        if (page.metaDescription) {
+          aiSummary += `\n\n📝 Meta: ${page.metaDescription}`;
+        }
+
+        return {
+          'Page Type': `${this.getPageTypeIcon(page.pageType || 'page')} ${(page.pageType || 'page').toUpperCase()}`,
+          'Page Title': page.title || 'No Title',
+          'URL': page.url,
+          'Status': page.statusCode === 200 ? '✅ OK' : `❌ ${page.statusCode}`,
+          'Page Sections & Content': sectionsContent || 'No content sections analyzed',
+          'Images Found': imagesContent || 'No images found',
+          'AI Content Summary': aiSummary
+        };
+      });
+
+    if (structureRows.length > 0) {
+      await structureSheet.addRows(structureRows);
+    }
   }
 
   private async createSiteStructureSheet(doc: GoogleSpreadsheet, data: ExportData): Promise<void> {
@@ -362,6 +420,80 @@ export class GoogleSheetsService {
   private truncateText(text: string, length: number): string {
     if (!text) return '';
     return text.length > length ? text.substring(0, length) + '...' : text;
+  }
+
+  private async formatSheetsWithAutoResize(doc: GoogleSpreadsheet): Promise<void> {
+    // Enhanced formatting for better readability and auto-resize
+    for (const sheet of doc.sheetsByIndex) {
+      if (sheet.rowCount > 0) {
+        // Make header row bold and set background color
+        await sheet.loadCells('A1:Z1');
+        for (let col = 0; col < sheet.columnCount; col++) {
+          const cell = sheet.getCell(0, col);
+          if (cell.value) {
+            cell.textFormat = { bold: true };
+            cell.backgroundColor = { red: 0.9, green: 0.9, blue: 0.9 };
+          }
+        }
+        await sheet.saveUpdatedCells();
+
+        // Auto-resize columns and set text wrapping
+        const requests = [];
+        
+        // Auto-resize all columns
+        requests.push({
+          autoResizeDimensions: {
+            dimensions: {
+              sheetId: sheet.sheetId,
+              dimension: 'COLUMNS',
+              startIndex: 0,
+              endIndex: sheet.columnCount
+            }
+          }
+        });
+
+        // Set row height to auto-resize for content
+        requests.push({
+          updateDimensionProperties: {
+            range: {
+              sheetId: sheet.sheetId,
+              dimension: 'ROWS',
+              startIndex: 1, // Skip header row
+              endIndex: sheet.rowCount
+            },
+            properties: {
+              pixelSize: null // Auto-size
+            },
+            fields: 'pixelSize'
+          }
+        });
+
+        // Enable text wrapping for all cells
+        requests.push({
+          repeatCell: {
+            range: {
+              sheetId: sheet.sheetId,
+              startRowIndex: 0,
+              endRowIndex: sheet.rowCount,
+              startColumnIndex: 0,
+              endColumnIndex: sheet.columnCount
+            },
+            cell: {
+              userEnteredFormat: {
+                wrapStrategy: 'WRAP',
+                verticalAlignment: 'TOP'
+              }
+            },
+            fields: 'userEnteredFormat.wrapStrategy,userEnteredFormat.verticalAlignment'
+          }
+        });
+
+        // Execute all formatting requests
+        if (requests.length > 0) {
+          await doc.batchUpdate(requests);
+        }
+      }
+    }
   }
 
   private async formatSheets(doc: GoogleSpreadsheet): Promise<void> {
