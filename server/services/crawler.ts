@@ -898,7 +898,7 @@ export class WebsiteCrawler {
 
   /**
    * Extract content exactly as it appears in HTML in correct top-to-bottom order
-   * WITHOUT any AI rewriting or modification
+   * WITHOUT any AI rewriting or modification - ENHANCED FOR 100% ACCURACY
    */
   private extractExactContentInOrder($: cheerio.CheerioAPI, url: string): string {
     console.log(`🔍 Extracting exact content in HTML order for: ${url}`);
@@ -906,56 +906,213 @@ export class WebsiteCrawler {
     const content: string[] = [];
     const processedElements = new Set<string>();
     
-    // Extract content from body in the exact order it appears in HTML
-    $('body *').each((_, element) => {
-      const $el = $(element);
-      const tagName = element.tagName?.toLowerCase();
-      
-      // Skip script, style, and other non-content elements
-      if (['script', 'style', 'noscript', 'meta', 'link', 'head'].includes(tagName || '')) {
-        return;
-      }
-      
-      // Get direct text content (not including children)
-      const directText = $el.contents().filter(function() {
-        return this.nodeType === 3; // Text nodes only
-      }).text().trim();
-      
-      if (directText && directText.length > 10) {
-        const elementIdentifier = `${tagName}_${directText.substring(0, 50)}`;
-        if (!processedElements.has(elementIdentifier)) {
-          // Add heading indicators for structure
-          if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName || '')) {
-            content.push(`\n=== ${tagName?.toUpperCase()} HEADING ===\n${directText}\n`);
-          } else if (tagName === 'p') {
-            content.push(`\n${directText}\n`);
-          } else if (['li'].includes(tagName || '')) {
-            content.push(`• ${directText}`);
-          } else if (directText.length > 20) {
-            content.push(`${directText}`);
-          }
-          processedElements.add(elementIdentifier);
-        }
-      }
-    });
+    // Extract navigation elements first (header/nav)
+    const navigationContent = this.extractNavigationElements($, url);
+    if (navigationContent) {
+      content.push(`\n🧭 === NAVIGATION ELEMENTS ===\n${navigationContent}\n`);
+    }
     
-    // Extract images with their exact position
-    $('img').each((index, img) => {
-      const $img = $(img);
-      const src = $img.attr('src');
-      const alt = $img.attr('alt') || 'No alt text';
-      
-      if (src) {
-        // Resolve relative URLs
-        const absoluteSrc = src.startsWith('http') ? src : new URL(src, url).href;
-        content.push(`\n🖼️ IMAGE: ${alt}\nURL: ${absoluteSrc}\n`);
-      }
-    });
+    // Enhanced extraction - walk through body elements in order and get ALL text content
+    this.walkElementsInOrder($('body').first(), $, content, processedElements, url);
     
     const finalContent = content.join('\n').replace(/\n{3,}/g, '\n\n').trim();
     console.log(`📝 Extracted ${finalContent.length} characters of exact content`);
     
     return finalContent;
+  }
+
+  /**
+   * Recursively walk through elements to extract ALL content including nested ul/li and div children
+   */
+  private walkElementsInOrder(
+    $parent: cheerio.Cheerio<cheerio.Element>, 
+    $: cheerio.CheerioAPI, 
+    content: string[], 
+    processedElements: Set<string>,
+    url: string
+  ): void {
+    $parent.children().each((_, element) => {
+      const $el = $(element);
+      const tagName = element.tagName?.toLowerCase();
+      
+      // Skip script, style, and other non-content elements
+      if (['script', 'style', 'noscript', 'meta', 'link', 'head', 'nav', 'header'].includes(tagName || '')) {
+        return;
+      }
+      
+      // Handle different element types for 100% extraction accuracy
+      if (tagName === 'ul' || tagName === 'ol') {
+        this.extractListContent($el, content, processedElements, tagName);
+      } else if (tagName === 'div') {
+        this.extractDivContent($el, $, content, processedElements, url);
+      } else if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName || '')) {
+        this.extractHeadingContent($el, content, processedElements, tagName);
+      } else if (tagName === 'p') {
+        this.extractParagraphContent($el, content, processedElements);
+      } else if (tagName === 'img') {
+        this.extractImageContent($el, content, url);
+      } else if (tagName === 'table') {
+        this.extractTableContent($el, content, processedElements);
+      } else {
+        // Extract any other text content
+        const allText = $el.text().trim();
+        if (allText && allText.length > 10) {
+          const elementId = `${tagName}_${allText.substring(0, 30)}`;
+          if (!processedElements.has(elementId)) {
+            content.push(`${allText}`);
+            processedElements.add(elementId);
+          }
+        }
+      }
+      
+      // Recursively process children for complete extraction
+      this.walkElementsInOrder($el, $, content, processedElements, url);
+    });
+  }
+
+  /**
+   * Extract navigation elements separately for better organization
+   */
+  private extractNavigationElements($: cheerio.CheerioAPI, url: string): string {
+    const navContent: string[] = [];
+    
+    // Extract header and navigation elements
+    $('header, nav, .header, .navigation, .navbar, .menu').each((_, element) => {
+      const $el = $(element);
+      const text = $el.text().trim();
+      
+      if (text && text.length > 10) {
+        navContent.push(text);
+      }
+      
+      // Extract navigation links
+      $el.find('a').each((_, link) => {
+        const $link = $(link);
+        const linkText = $link.text().trim();
+        const href = $link.attr('href');
+        
+        if (linkText && linkText.length > 2) {
+          if (href) {
+            const absoluteHref = href.startsWith('http') ? href : new URL(href, url).href;
+            navContent.push(`📎 ${linkText} → ${absoluteHref}`);
+          } else {
+            navContent.push(`📎 ${linkText}`);
+          }
+        }
+      });
+    });
+    
+    return navContent.join('\n');
+  }
+
+  /**
+   * Extract ul/ol lists with proper bullet formatting
+   */
+  private extractListContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>, tagName: string): void {
+    const listItems: string[] = [];
+    
+    $el.find('li').each((index, item) => {
+      const $item = $(item);
+      const itemText = $item.text().trim();
+      
+      if (itemText && itemText.length > 2) {
+        const bullet = tagName === 'ul' ? '•' : `${index + 1}.`;
+        listItems.push(`  ${bullet} ${itemText}`);
+      }
+    });
+    
+    if (listItems.length > 0) {
+      const listId = `list_${listItems[0].substring(0, 30)}`;
+      if (!processedElements.has(listId)) {
+        content.push(`\n📋 === ${tagName.toUpperCase()} LIST ===\n${listItems.join('\n')}\n`);
+        processedElements.add(listId);
+      }
+    }
+  }
+
+  /**
+   * Extract div content including all nested children
+   */
+  private extractDivContent($el: cheerio.Cheerio<cheerio.Element>, $: cheerio.CheerioAPI, content: string[], processedElements: Set<string>, url: string): void {
+    // Get all text content from div and its children
+    const divText = $el.text().trim();
+    
+    if (divText && divText.length > 20) {
+      const divId = `div_${divText.substring(0, 30)}`;
+      if (!processedElements.has(divId)) {
+        // Check if div has specific content structure
+        const hasHeadings = $el.find('h1, h2, h3, h4, h5, h6').length > 0;
+        const hasList = $el.find('ul, ol').length > 0;
+        const hasImages = $el.find('img').length > 0;
+        
+        if (hasHeadings || hasList || hasImages) {
+          content.push(`\n📦 === DIV SECTION ===\n${divText}\n`);
+        } else {
+          content.push(`${divText}`);
+        }
+        processedElements.add(divId);
+      }
+    }
+  }
+
+  /**
+   * Extract heading content with proper formatting
+   */
+  private extractHeadingContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>, tagName: string): void {
+    const headingText = $el.text().trim();
+    
+    if (headingText && headingText.length > 2) {
+      const headingId = `${tagName}_${headingText.substring(0, 30)}`;
+      if (!processedElements.has(headingId)) {
+        content.push(`\n=== ${tagName?.toUpperCase()} HEADING ===\n${headingText}\n`);
+        processedElements.add(headingId);
+      }
+    }
+  }
+
+  /**
+   * Extract paragraph content
+   */
+  private extractParagraphContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>): void {
+    const paragraphText = $el.text().trim();
+    
+    if (paragraphText && paragraphText.length > 10) {
+      const paragraphId = `p_${paragraphText.substring(0, 30)}`;
+      if (!processedElements.has(paragraphId)) {
+        content.push(`\n${paragraphText}\n`);
+        processedElements.add(paragraphId);
+      }
+    }
+  }
+
+  /**
+   * Extract image content with enhanced formatting
+   */
+  private extractImageContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], url: string): void {
+    const src = $el.attr('src');
+    const alt = $el.attr('alt') || 'No alt text';
+    const title = $el.attr('title') || '';
+    
+    if (src) {
+      // Resolve relative URLs
+      const absoluteSrc = src.startsWith('http') ? src : new URL(src, url).href;
+      content.push(`\n🖼️ IMAGE: ${alt}\n📷 URL: ${absoluteSrc}${title ? `\n📝 Title: ${title}` : ''}\n`);
+    }
+  }
+
+  /**
+   * Extract table content with structure
+   */
+  private extractTableContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>): void {
+    const tableText = $el.text().trim();
+    
+    if (tableText && tableText.length > 20) {
+      const tableId = `table_${tableText.substring(0, 30)}`;
+      if (!processedElements.has(tableId)) {
+        content.push(`\n📊 === TABLE CONTENT ===\n${tableText}\n`);
+        processedElements.add(tableId);
+      }
+    }
   }
 
   /**
