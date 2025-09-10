@@ -298,41 +298,17 @@ async function processAnalysisJob(jobId: string) {
 
     console.log(`✅ Sitemap crawling completed! Found ${pages.length} pages`);
     
-    // Mark sitemap crawling as complete
+    // Mark sitemap crawling as complete - content analysis is already done during real-time crawling
     await storage.updateAnalysisJob(jobId, { 
       totalPages: pages.length,
-      progress: 75 // Sitemap crawling complete, ready for content analysis
+      processedPages: pages.length,
+      progress: 85 // Content analysis already completed during real-time crawling
     });
 
-    // Step 3: Analyze content with GLM if API key provided
-    if (job.glmApiKey) {
-      const glmService = new GLMService(job.glmApiKey);
-      const jobPages = await storage.getJobPages(job.id);
-      
-      let processedCount = 0;
-      for (const page of jobPages) {
-        try {
-          await storage.updateDiscoveredPage(page.id, { analysisStatus: "processing" });
-          
-          const analysis = await glmService.analyzePageContent(page.url, page.title || 'No title');
-          
-          await storage.updateDiscoveredPage(page.id, {
-            contentSummary: analysis,
-            analysisStatus: "completed"
-          });
-          
-          processedCount++;
-          const progress = 50 + Math.floor((processedCount / jobPages.length) * 40);
-          await storage.updateAnalysisJob(jobId, { 
-            processedPages: processedCount,
-            progress 
-          });
-        } catch (error) {
-          console.error(`Error analyzing page ${page.url}:`, error);
-          await storage.updateDiscoveredPage(page.id, { analysisStatus: "failed" });
-        }
-      }
-    }
+    console.log(`✅ Content analysis completed during real-time crawling - no additional AI processing needed`);
+    
+    // All content analysis is now done during the real-time crawling process
+    // The exact content extraction with proper order is already complete
 
     // Step 4: Export to Google Sheets if configured
     if (job.sheetsId && job.serviceAccountJson) {
