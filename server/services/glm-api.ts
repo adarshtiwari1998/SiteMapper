@@ -30,9 +30,13 @@ export class GLMService {
     try {
       // Fetch page content
       const pageResponse = await axios.get(url, {
-        timeout: 10000,
+        timeout: 30000, // Increased timeout
         headers: {
           'User-Agent': 'SiteMapper Pro 1.0 - Content Analyzer'
+        },
+        maxRedirects: 5,
+        validateStatus: function (status) {
+          return status >= 200 && status < 400; // Accept 2xx and 3xx status codes
         }
       });
 

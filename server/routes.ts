@@ -255,8 +255,8 @@ async function processAnalysisJob(jobId: string) {
     const crawler = new WebsiteCrawler();
     const pages = await crawler.crawlWebsite(job.websiteUrl, {
       maxPages: job.maxPages || 100,
-      includeImages: job.includeImages || false,
-      deepAnalysis: job.deepAnalysis || false
+      includeImages: job.includeImages !== false, // Default to true
+      deepAnalysis: job.deepAnalysis !== false // Default to true for section analysis
     });
 
     // Save discovered pages with deep analysis data

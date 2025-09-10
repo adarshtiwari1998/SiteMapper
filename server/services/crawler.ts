@@ -56,7 +56,67 @@ export class WebsiteCrawler {
     // First try to get sitemap.xml
     const sitemapPages = await this.parseSitemap(websiteUrl);
     if (sitemapPages.length > 0) {
-      return sitemapPages.slice(0, options.maxPages);
+      console.log(`Found ${sitemapPages.length} pages from sitemap, starting deep analysis...`);
+      
+      // Process sitemap pages with deep analysis if enabled
+      const processedPages: CrawledPage[] = [];
+      const pagesToProcess = sitemapPages.slice(0, options.maxPages);
+      
+      for (const sitemapPage of pagesToProcess) {
+        try {
+          const response = await axios.get(sitemapPage.url, {
+            timeout: 30000,
+            headers: {
+              'User-Agent': 'SiteMapper Pro 1.0 - Website Analysis Tool'
+            },
+            maxRedirects: 5,
+            validateStatus: function (status) {
+              return status >= 200 && status < 400;
+            }
+          });
+
+          const $ = cheerio.load(response.data);
+          const title = $('title').text().trim();
+          const pageType = this.determinePageType(sitemapPage.url, title);
+
+          const pageData: CrawledPage = {
+            url: sitemapPage.url,
+            title,
+            type: pageType,
+            statusCode: response.status
+          };
+
+          // Perform deep analysis if enabled
+          if (options.deepAnalysis) {
+            pageData.sections = this.extractPageSections($);
+            pageData.metaDescription = $('meta[name="description"]').attr('content') || '';
+            pageData.headings = this.extractHeadings($);
+            pageData.contentSummary = this.generateContentSummary($);
+            pageData.pageStructure = this.analyzePageStructure($);
+          }
+
+          // Extract images if enabled
+          if (options.includeImages) {
+            pageData.images = this.extractImages($, sitemapPage.url);
+          }
+
+          processedPages.push(pageData);
+          console.log(`Processed page ${processedPages.length}/${pagesToProcess.length}: ${sitemapPage.url}`);
+          
+        } catch (error) {
+          console.error(`Error processing sitemap page ${sitemapPage.url}:`, error);
+          
+          // Add failed page with error info
+          processedPages.push({
+            url: sitemapPage.url,
+            title: 'Failed to load',
+            statusCode: axios.isAxiosError(error) ? error.response?.status || 0 : 0,
+            contentSummary: 'Page could not be analyzed due to loading error'
+          });
+        }
+      }
+      
+      return processedPages;
     }
 
     // Fallback to manual crawling
@@ -68,9 +128,13 @@ export class WebsiteCrawler {
 
       try {
         const response = await axios.get(currentUrl, {
-          timeout: 10000,
+          timeout: 30000, // Increased timeout
           headers: {
             'User-Agent': 'SiteMapper Pro 1.0 - Website Analysis Tool'
+          },
+          maxRedirects: 5,
+          validateStatus: function (status) {
+            return status >= 200 && status < 400;
           }
         });
 
@@ -114,10 +178,19 @@ export class WebsiteCrawler {
 
       } catch (error) {
         console.error(`Error crawling ${currentUrl}:`, error);
-        pages.push({
+        
+        // Still add the page but with error status
+        const errorPage: CrawledPage = {
           url: currentUrl,
-          statusCode: axios.isAxiosError(error) ? error.response?.status : 0
-        });
+          statusCode: axios.isAxiosError(error) ? error.response?.status || 0 : 0,
+          title: 'Failed to load',
+          contentSummary: 'Page could not be analyzed due to loading error'
+        };
+        
+        pages.push(errorPage);
+        
+        // Continue processing other pages instead of stopping
+        continue;
       }
     }
 
