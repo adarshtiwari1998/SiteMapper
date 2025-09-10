@@ -44,5 +44,25 @@ export const api = {
   async exportCsv(jobId: string) {
     const response = await apiRequest("GET", `/api/analysis/${jobId}/export`);
     return response.blob();
+  },
+
+  async saveConfiguration(data: any) {
+    const response = await apiRequest("POST", "/api/configurations", data);
+    return response.json();
+  },
+
+  async getDefaultConfiguration() {
+    const response = await apiRequest("GET", "/api/configurations/default");
+    return response.json();
+  },
+
+  async getAllConfigurations() {
+    const response = await apiRequest("GET", "/api/configurations");
+    return response.json();
+  },
+
+  async updateConfiguration(id: string, data: any) {
+    const response = await apiRequest("PUT", `/api/configurations/${id}`, data);
+    return response.json();
   }
 };
