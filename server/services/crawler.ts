@@ -338,143 +338,178 @@ export class WebsiteCrawler {
     const sections: PageSection[] = [];
     let position = 0;
 
-    // Extract header content first
-    $('header, .header, #header, .site-header').each((_, element) => {
-      const $el = $(element);
-      const content = $el.text().trim().replace(/\s+/g, ' ');
-      if (content && content.length > 20) {
+    // 1. Extract header content as separate entry
+    this.extractHeaderContent($, sections, position);
+    position = sections.length;
+
+    // 2. Extract main content from <main> elements with full detail
+    this.extractMainContent($, sections, position);
+    position = sections.length;
+
+    // 3. Extract footer content as separate entry
+    this.extractFooterContent($, sections, position);
+    
+    return sections;
+  }
+
+  private extractHeaderContent($: cheerio.CheerioAPI, sections: PageSection[], startPosition: number): void {
+    let position = startPosition;
+    
+    $('header, .header, #header, #site-header, .site-header').each((_, element) => {
+      const $header = $(element);
+      
+      // Extract navigation links cleanly
+      const navLinks: string[] = [];
+      $header.find('a, .menu-item').each((_, linkEl) => {
+        const linkText = $(linkEl).text().trim();
+        if (linkText && linkText.length > 1 && linkText.length < 50) {
+          navLinks.push(linkText);
+        }
+      });
+      
+      // Extract header text content (excluding navigation)
+      let headerText = $header.clone().find('nav, .nav, .menu').remove().end().text().trim().replace(/\s+/g, ' ');
+      
+      if (navLinks.length > 0 || headerText.length > 10) {
+        const content = [
+          headerText ? `Header Text: ${headerText}` : '',
+          navLinks.length > 0 ? `Navigation: ${navLinks.join(' | ')}` : ''
+        ].filter(Boolean).join('\n');
+        
         sections.push({
           type: 'navigation',
-          title: '🔝 Header Section',
-          content: this.truncateText(content, 400),
+          title: '🔝 HEADER SECTION',
+          content: content,
           position: position++
         });
       }
     });
+  }
 
-    // Extract headings with comprehensive content
-    $('h1, h2, h3, h4, h5, h6').each((_, element) => {
-      const $el = $(element);
-      const level = parseInt(element.tagName.charAt(1));
-      const title = $el.text().trim();
-      
-      // Get all content after this heading until the next heading
-      let content = '';
-      let $next = $el.next();
-      while ($next.length && !$next.is(`h1, h2, h3, h4, h5, h6`)) {
-        const elementText = $next.text().trim();
-        if (elementText && elementText.length > 10) {
-          content += elementText + ' ';
-        }
-        $next = $next.next();
+  private extractMainContent($: cheerio.CheerioAPI, sections: PageSection[], startPosition: number): void {
+    let position = startPosition;
+    
+    // Target main content areas specifically
+    const mainSelectors = [
+      'main#main', 
+      'main.site-main', 
+      'main[role="main"]',
+      'main',
+      '.main-content',
+      '#main-content',
+      '.entry-content',
+      '.post-content',
+      'article .content'
+    ];
+    
+    for (const selector of mainSelectors) {
+      const $main = $(selector).first();
+      if ($main.length > 0) {
+        console.log(`Extracting content from: ${selector}`);
         
-        // Prevent infinite loops and limit content length
-        if (content.length > 2000) break;
-      }
-
-      // Add images found in this section
-      const sectionImages = $el.nextUntil('h1, h2, h3, h4, h5, h6').find('img');
-      let imageInfo = '';
-      sectionImages.each((_, imgElement) => {
-        const $img = $(imgElement);
-        const src = $img.attr('src');
-        const alt = $img.attr('alt') || 'No alt text';
-        if (src) {
-          imageInfo += `\n🖼️ Image: ${alt} (${src})`;
-        }
-      });
-
-      sections.push({
-        type: 'heading',
-        level,
-        title,
-        content: (content.trim() + imageInfo).trim() || 'No content found',
-        position: position++
-      });
-    });
-
-    // Extract comprehensive body content sections
-    $('main, article, .content, .main-content, #content, .entry-content, .post-content').each((_, element) => {
-      const $el = $(element);
-      const content = $el.text().trim().replace(/\s+/g, ' ');
-      if (content.length > 100) {
-        // Extract images within main content
-        let imageInfo = '';
-        $el.find('img').each((_, imgElement) => {
-          const $img = $(imgElement);
-          const src = $img.attr('src');
-          const alt = $img.attr('alt') || 'No alt text';
-          if (src) {
-            imageInfo += `\n🖼️ ${alt} (${src})`;
+        // Extract headings with their following content
+        $main.find('h1, h2, h3, h4, h5, h6').each((_, headingEl) => {
+          const $heading = $(headingEl);
+          const level = parseInt(headingEl.tagName.charAt(1));
+          const title = $heading.text().trim();
+          
+          if (title) {
+            // Collect all content until next heading
+            let content = '';
+            let images: string[] = [];
+            
+            let $next = $heading.next();
+            while ($next.length && !$next.is('h1, h2, h3, h4, h5, h6')) {
+              
+              // Extract text content
+              const text = $next.text().trim();
+              if (text && text.length > 20) {
+                content += text + '\n\n';
+              }
+              
+              // Extract images in this section
+              $next.find('img').each((_, imgEl) => {
+                const $img = $(imgEl);
+                const src = $img.attr('src');
+                const alt = $img.attr('alt') || 'No description';
+                if (src) {
+                  images.push(`🖼️ ${alt}: ${src}`);
+                }
+              });
+              
+              $next = $next.next();
+              if (content.length > 3000) break; // Prevent too much content
+            }
+            
+            // Combine content and images
+            const fullContent = [
+              content.trim(),
+              images.length > 0 ? '\n' + images.join('\n') : ''
+            ].filter(Boolean).join('');
+            
+            sections.push({
+              type: 'heading',
+              level,
+              title: `📝 ${title}`,
+              content: fullContent || 'No content available for this section',
+              position: position++
+            });
           }
         });
-
-        sections.push({
-          type: 'content',
-          title: '📄 Main Content Area',
-          content: this.truncateText(content, 1000) + imageInfo,
-          position: position++
+        
+        // Extract standalone paragraphs not under headings
+        $main.children('p, div.content, div.text-content').each((_, paraEl) => {
+          const $para = $(paraEl);
+          const text = $para.text().trim();
+          if (text && text.length > 50) {
+            // Check for images in this paragraph section
+            let images: string[] = [];
+            $para.find('img').each((_, imgEl) => {
+              const $img = $(imgEl);
+              const src = $img.attr('src');
+              const alt = $img.attr('alt') || 'No description';
+              if (src) {
+                images.push(`🖼️ ${alt}: ${src}`);
+              }
+            });
+            
+            const fullContent = [
+              text,
+              images.length > 0 ? '\n' + images.join('\n') : ''
+            ].filter(Boolean).join('');
+            
+            sections.push({
+              type: 'content',
+              title: '📄 Content Section',
+              content: fullContent,
+              position: position++
+            });
+          }
         });
+        
+        break; // Found main content, stop looking
       }
-    });
+    }
+  }
 
-    // Extract all paragraphs with substantial content
-    $('p').each((_, element) => {
-      const $el = $(element);
-      const content = $el.text().trim();
-      if (content.length > 100 && !$el.closest('header, footer, nav').length) {
-        sections.push({
-          type: 'content',
-          title: '📝 Paragraph Content',
-          content: this.truncateText(content, 300),
-          position: position++
-        });
-      }
-    });
-
-    // Extract navigation
-    $('nav, .navigation, .nav, .menu').each((_, element) => {
-      const $el = $(element);
-      const links = $el.find('a').map((_, link) => $(link).text().trim()).get().join(', ');
-      if (links) {
-        sections.push({
-          type: 'navigation',
-          title: 'Navigation',
-          content: links,
-          position: position++
-        });
-      }
-    });
-
-    // Extract lists
-    $('ul, ol').each((_, element) => {
-      const $el = $(element);
-      const listItems = $el.find('li').map((_, li) => $(li).text().trim()).get();
-      if (listItems.length > 0) {
-        sections.push({
-          type: 'list',
-          title: 'List',
-          content: listItems.join('; '),
-          position: position++
-        });
-      }
-    });
-
-    // Extract footer content
+  private extractFooterContent($: cheerio.CheerioAPI, sections: PageSection[], startPosition: number): void {
+    let position = startPosition;
+    
     $('footer, .footer, #footer, .site-footer').each((_, element) => {
-      const $el = $(element);
-      const content = $el.text().trim().replace(/\s+/g, ' ');
-      if (content && content.length > 20) {
+      const $footer = $(element);
+      
+      // Extract footer content cleanly
+      const footerText = $footer.text().trim().replace(/\s+/g, ' ');
+      
+      if (footerText && footerText.length > 20) {
         sections.push({
           type: 'navigation',
-          title: '🔽 Footer Section',
-          content: this.truncateText(content, 400),
+          title: '🔽 FOOTER SECTION',
+          content: this.truncateText(footerText, 600),
           position: position++
         });
       }
     });
-
-    return sections;
   }
 
   private truncateText(text: string, maxLength: number): string {
