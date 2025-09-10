@@ -41,6 +41,18 @@ export const discoveredPages = pgTable("discovered_pages", {
   createdAt: timestamp("created_at").default(sql`now()`),
 });
 
+export const userConfigurations = pgTable("user_configurations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id"),
+  configName: text("config_name").notNull().default("Default Configuration"),
+  sheetsId: text("sheets_id"),
+  glmApiKey: text("glm_api_key"),
+  serviceAccountJson: json("service_account_json"),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -66,9 +78,21 @@ export const insertDiscoveredPageSchema = createInsertSchema(discoveredPages).om
   createdAt: true,
 });
 
+export const insertUserConfigurationSchema = createInsertSchema(userConfigurations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  configName: z.string().min(1),
+  sheetsId: z.string().optional(),
+  glmApiKey: z.string().optional(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type AnalysisJob = typeof analysisJobs.$inferSelect;
 export type InsertAnalysisJob = z.infer<typeof insertAnalysisJobSchema>;
 export type DiscoveredPage = typeof discoveredPages.$inferSelect;
 export type InsertDiscoveredPage = z.infer<typeof insertDiscoveredPageSchema>;
+export type UserConfiguration = typeof userConfigurations.$inferSelect;
+export type InsertUserConfiguration = z.infer<typeof insertUserConfigurationSchema>;

@@ -1,4 +1,4 @@
-import { analysisJobs, discoveredPages, users, type User, type InsertUser, type AnalysisJob, type InsertAnalysisJob, type DiscoveredPage, type InsertDiscoveredPage } from "@shared/schema";
+import { analysisJobs, discoveredPages, users, userConfigurations, type User, type InsertUser, type AnalysisJob, type InsertAnalysisJob, type DiscoveredPage, type InsertDiscoveredPage, type UserConfiguration, type InsertUserConfiguration } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
 
@@ -18,6 +18,13 @@ export interface IStorage {
   getJobPages(jobId: string): Promise<DiscoveredPage[]>;
   updateDiscoveredPage(id: string, updates: Partial<DiscoveredPage>): Promise<DiscoveredPage>;
   getPagesByStatus(jobId: string, status: string): Promise<DiscoveredPage[]>;
+  
+  // User Configurations
+  createConfiguration(config: InsertUserConfiguration): Promise<UserConfiguration>;
+  getDefaultConfiguration(userId?: string): Promise<UserConfiguration | undefined>;
+  getAllConfigurations(userId?: string): Promise<UserConfiguration[]>;
+  updateConfiguration(id: string, updates: Partial<UserConfiguration>): Promise<UserConfiguration>;
+  deleteConfiguration(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -92,6 +99,57 @@ export class DatabaseStorage implements IStorage {
   async getPagesByStatus(jobId: string, status: string): Promise<DiscoveredPage[]> {
     return await db.select().from(discoveredPages)
       .where(and(eq(discoveredPages.jobId, jobId), eq(discoveredPages.analysisStatus, status)));
+  }
+
+  async createConfiguration(config: InsertUserConfiguration): Promise<UserConfiguration> {
+    // If this is being set as default, unset any existing default
+    if (config.isDefault) {
+      await db.update(userConfigurations)
+        .set({ isDefault: false })
+        .where(eq(userConfigurations.userId, config.userId || ''));
+    }
+
+    const [configuration] = await db
+      .insert(userConfigurations)
+      .values(config)
+      .returning();
+    return configuration;
+  }
+
+  async getDefaultConfiguration(userId?: string): Promise<UserConfiguration | undefined> {
+    const [config] = await db.select().from(userConfigurations)
+      .where(and(
+        eq(userConfigurations.userId, userId || ''),
+        eq(userConfigurations.isDefault, true)
+      ))
+      .orderBy(desc(userConfigurations.createdAt));
+    return config || undefined;
+  }
+
+  async getAllConfigurations(userId?: string): Promise<UserConfiguration[]> {
+    return await db.select().from(userConfigurations)
+      .where(eq(userConfigurations.userId, userId || ''))
+      .orderBy(desc(userConfigurations.createdAt));
+  }
+
+  async updateConfiguration(id: string, updates: Partial<UserConfiguration>): Promise<UserConfiguration> {
+    // If setting as default, unset any existing default
+    if (updates.isDefault) {
+      await db.update(userConfigurations)
+        .set({ isDefault: false })
+        .where(eq(userConfigurations.userId, updates.userId || ''));
+    }
+
+    const [config] = await db
+      .update(userConfigurations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userConfigurations.id, id))
+      .returning();
+    return config;
+  }
+
+  async deleteConfiguration(id: string): Promise<void> {
+    await db.delete(userConfigurations).where(eq(userConfigurations.id, id));
   }
 }
 

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAnalysisJobSchema } from "@shared/schema";
+import { insertAnalysisJobSchema, insertUserConfigurationSchema } from "@shared/schema";
 import { z } from "zod";
 import { WebsiteCrawler } from "./services/crawler";
 import { TechnologyDetector } from "./services/technology-detector";
@@ -140,6 +140,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error testing GLM API:", error);
       res.status(400).json({ error: "Invalid GLM API key or service unavailable" });
+    }
+  });
+
+  // Save configuration
+  app.post("/api/configurations", async (req, res) => {
+    try {
+      const validatedData = insertUserConfigurationSchema.parse(req.body);
+      
+      const config = await storage.createConfiguration({
+        ...validatedData,
+        isDefault: true, // Set as default for now
+        userId: null // For now, we don't have user auth
+      });
+      
+      res.json({ success: true, configuration: config });
+    } catch (error) {
+      console.error("Error saving configuration:", error);
+      res.status(400).json({ 
+        error: error instanceof z.ZodError ? error.errors : "Failed to save configuration" 
+      });
+    }
+  });
+
+  // Get default configuration
+  app.get("/api/configurations/default", async (req, res) => {
+    try {
+      const config = await storage.getDefaultConfiguration(null); // No user auth for now
+      res.json(config || null);
+    } catch (error) {
+      console.error("Error fetching default configuration:", error);
+      res.status(500).json({ error: "Failed to fetch configuration" });
+    }
+  });
+
+  // Get all configurations
+  app.get("/api/configurations", async (req, res) => {
+    try {
+      const configs = await storage.getAllConfigurations(null); // No user auth for now
+      res.json(configs);
+    } catch (error) {
+      console.error("Error fetching configurations:", error);
+      res.status(500).json({ error: "Failed to fetch configurations" });
+    }
+  });
+
+  // Update configuration
+  app.put("/api/configurations/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = insertUserConfigurationSchema.partial().parse(req.body);
+      
+      const config = await storage.updateConfiguration(id, validatedData);
+      res.json({ success: true, configuration: config });
+    } catch (error) {
+      console.error("Error updating configuration:", error);
+      res.status(400).json({ 
+        error: error instanceof z.ZodError ? error.errors : "Failed to update configuration" 
+      });
     }
   });
 
