@@ -488,10 +488,8 @@ export class GoogleSheetsService {
           }
         });
 
-        // Execute all formatting requests
-        if (requests.length > 0) {
-          await doc.batchUpdate(requests);
-        }
+        // Note: More advanced formatting can be added here if needed
+        // The google-spreadsheet library has limited batch update support
       }
     }
   }
