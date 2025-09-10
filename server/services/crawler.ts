@@ -45,6 +45,7 @@ export interface CrawlOptions {
   deepAnalysis: boolean;
   useAI?: boolean;
   glmApiKey?: string;
+  onPageProcessed?: (page: CrawledPage, processedCount: number, totalFound: number) => Promise<void>;
 }
 
 export class WebsiteCrawler {
@@ -233,6 +234,140 @@ export class WebsiteCrawler {
     }
 
     return pages;
+  }
+
+  async crawlWebsiteWithRealTimeUpdates(websiteUrl: string, options: CrawlOptions): Promise<CrawledPage[]> {
+    console.log('🚀 Starting REAL-TIME website crawling with live updates...');
+    
+    this.visited.clear();
+    this.baseUrl = new URL(websiteUrl).origin;
+    this.sitemapDepth = 0;
+    
+    // Initialize AI service if enabled
+    let glmService: GLMService | undefined;
+    if (options.useAI && options.glmApiKey) {
+      glmService = new GLMService(options.glmApiKey);
+      console.log('🤖 AI-powered real-time analysis enabled');
+    }
+
+    // Get sitemap pages first
+    const sitemapPages = await this.parseSitemap(websiteUrl);
+    if (sitemapPages.length === 0) {
+      console.log('⚠️ No sitemap found, fallback to manual crawling');
+      // Fallback to original crawling method
+      return this.crawlWebsite(websiteUrl, options);
+    }
+
+    console.log(`📊 Found ${sitemapPages.length} pages in sitemap, processing with real-time updates...`);
+    
+    const processedPages: CrawledPage[] = [];
+    const pagesToProcess = sitemapPages.slice(0, options.maxPages);
+    let processedCount = 0;
+    
+    // Process pages one by one with real-time updates
+    for (const sitemapPage of pagesToProcess) {
+      try {
+        console.log(`🔄 Processing page ${processedCount + 1}/${pagesToProcess.length}: ${sitemapPage.url}`);
+        
+        const response = await axios.get(sitemapPage.url, {
+          timeout: 60000,
+          headers: {
+            'User-Agent': 'SiteMapper Pro 1.0 - Real-time AI Analysis Tool'
+          },
+          maxRedirects: 5,
+          validateStatus: function (status) {
+            return status >= 200 && status < 400;
+          }
+        });
+
+        const $ = cheerio.load(response.data);
+        const title = $('title').text().trim();
+        const pageType = this.determinePageType(sitemapPage.url, title);
+
+        const pageData: CrawledPage = {
+          url: sitemapPage.url,
+          title,
+          type: pageType,
+          statusCode: response.status
+        };
+
+        // AI-ENHANCED ANALYSIS with real-time processing
+        if (options.useAI && glmService && options.deepAnalysis) {
+          try {
+            console.log(`🤖 Running real-time AI analysis for: ${sitemapPage.url}`);
+            const aiAnalysis = await glmService.deepAnalyzePageStructure(sitemapPage.url, title);
+            
+            pageData.aiAnalysis = aiAnalysis;
+            pageData.detectedPlatform = aiAnalysis.detectedPlatform;
+            pageData.hasElementor = aiAnalysis.hasElementor;
+            pageData.contentSummary = aiAnalysis.summary;
+            
+            // Convert AI-extracted content to our format with ACTUAL CONTENT
+            if (aiAnalysis.extractedContent.sections) {
+              pageData.sections = aiAnalysis.extractedContent.sections.map((section: any, index: number) => ({
+                type: 'content' as const,
+                title: section.heading || `Content Section ${index + 1}`,
+                content: section.content || 'No content extracted',
+                position: index
+              }));
+            }
+            
+            // Store complete ACTUAL content for sheets export
+            pageData.completeContent = this.formatActualContent(aiAnalysis.extractedContent);
+            
+            console.log(`✅ AI analysis completed - Content length: ${pageData.completeContent?.length || 0} chars`);
+          } catch (aiError) {
+            console.error(`⚠️ AI analysis failed for ${sitemapPage.url}, using traditional extraction:`, aiError);
+            await this.performTraditionalAnalysis(pageData, $, options, sitemapPage.url);
+          }
+        } else {
+          // Traditional analysis if AI is not enabled
+          await this.performTraditionalAnalysis(pageData, $, options, sitemapPage.url);
+        }
+
+        processedPages.push(pageData);
+        processedCount++;
+        
+        // REAL-TIME UPDATE: Call callback to save page immediately
+        if (options.onPageProcessed) {
+          try {
+            await options.onPageProcessed(pageData, processedCount, pagesToProcess.length);
+            console.log(`💾 Real-time update sent for page ${processedCount}/${pagesToProcess.length}`);
+          } catch (callbackError) {
+            console.error('Error in real-time callback:', callbackError);
+            // Continue processing even if callback fails
+          }
+        }
+        
+        console.log(`✅ Completed page ${processedCount}/${pagesToProcess.length}: ${sitemapPage.url}`);
+        
+      } catch (error) {
+        console.error(`⚠️ Error processing page ${sitemapPage.url}:`, error);
+        
+        // Add failed page
+        const errorPage: CrawledPage = {
+          url: sitemapPage.url,
+          title: 'Failed to load',
+          statusCode: axios.isAxiosError(error) ? error.response?.status || 0 : 0,
+          contentSummary: 'Page could not be analyzed due to loading error'
+        };
+        
+        processedPages.push(errorPage);
+        processedCount++;
+        
+        // Still call the callback for failed pages
+        if (options.onPageProcessed) {
+          try {
+            await options.onPageProcessed(errorPage, processedCount, pagesToProcess.length);
+          } catch (callbackError) {
+            console.error('Error in real-time callback for failed page:', callbackError);
+          }
+        }
+      }
+    }
+    
+    console.log(`✅ Real-time crawling completed! Processed ${processedCount} pages`);
+    return processedPages;
   }
 
   private async performTraditionalAnalysis(pageData: CrawledPage, $: cheerio.CheerioAPI, options: CrawlOptions, url: string): Promise<void> {

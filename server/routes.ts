@@ -251,37 +251,57 @@ async function processAnalysisJob(jobId: string) {
       progress: 25 
     });
 
-    // Step 2: Crawl website with AI-enhanced analysis
+    // Step 2: Crawl website with REAL-TIME page saving
+    console.log('🔄 Starting real-time website crawling with AI analysis...');
+    
+    // Update status to show sitemap crawling is starting
+    await storage.updateAnalysisJob(jobId, { progress: 30 });
+    
     const crawler = new WebsiteCrawler();
-    const pages = await crawler.crawlWebsite(job.websiteUrl, {
+    const pages = await crawler.crawlWebsiteWithRealTimeUpdates(job.websiteUrl, {
       maxPages: job.maxPages || 100,
-      includeImages: job.includeImages !== false, // Default to true
-      deepAnalysis: job.deepAnalysis !== false, // Default to true for section analysis
-      useAI: !!job.glmApiKey, // Enable AI if GLM API key is provided
-      glmApiKey: job.glmApiKey || undefined
+      includeImages: job.includeImages !== false,
+      deepAnalysis: job.deepAnalysis !== false,
+      useAI: !!job.glmApiKey,
+      glmApiKey: job.glmApiKey || undefined,
+      // Real-time callback to save pages as they're processed
+      onPageProcessed: async (page: any, processedCount: number, totalFound: number) => {
+        console.log(`💾 Saving page ${processedCount}/${totalFound}: ${page.url}`);
+        
+        // Save page immediately as it's processed
+        await storage.createDiscoveredPage({
+          jobId: job.id,
+          url: page.url,
+          title: page.title,
+          pageType: page.type,
+          statusCode: page.statusCode,
+          analysisStatus: "completed",
+          contentSummary: page.contentSummary || null,
+          metaDescription: page.metaDescription || null,
+          pageStructure: page.pageStructure || null,
+          sectionsData: page.sections || null,
+          imagesData: page.images || null,
+          headingsData: page.headings || null
+        });
+        
+        // Update progress based on pages processed
+        const crawlProgress = 30 + Math.floor((processedCount / totalFound) * 40); // 30-70%
+        await storage.updateAnalysisJob(jobId, { 
+          totalPages: totalFound,
+          processedPages: processedCount,
+          progress: Math.min(crawlProgress, 70)
+        });
+        
+        console.log(`✅ Progress updated: ${processedCount}/${totalFound} pages (${crawlProgress}%)`);
+      }
     });
 
-    // Save discovered pages with deep analysis data
-    for (const page of pages) {
-      await storage.createDiscoveredPage({
-        jobId: job.id,
-        url: page.url,
-        title: page.title,
-        pageType: page.type,
-        statusCode: page.statusCode,
-        analysisStatus: "completed",
-        contentSummary: page.contentSummary || null,
-        metaDescription: page.metaDescription || null,
-        pageStructure: page.pageStructure || null,
-        sectionsData: page.sections || null,
-        imagesData: page.images || null,
-        headingsData: page.headings || null
-      });
-    }
-
+    console.log(`✅ Sitemap crawling completed! Found ${pages.length} pages`);
+    
+    // Mark sitemap crawling as complete
     await storage.updateAnalysisJob(jobId, { 
-      totalPages: pages.length, 
-      progress: 50 
+      totalPages: pages.length,
+      progress: 75 // Sitemap crawling complete, ready for content analysis
     });
 
     // Step 3: Analyze content with GLM if API key provided
