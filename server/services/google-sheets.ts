@@ -149,8 +149,8 @@ export class GoogleSheetsService {
             const sectionTitle = section.title || 'Content Section';
             let content = section.content || 'No content';
             
-            // Convert image URLs to Google Sheets IMAGE formulas for previews
-            content = this.convertImagesToSheetsFormulas(content);
+            // Enhanced image preview conversion for Google Sheets
+            content = this.enhanceImagePreviews(content);
             return `${sectionIcon} ${sectionTitle}\n${content}`;
           }).join('\n\n---\n\n');
         }
@@ -423,14 +423,46 @@ export class GoogleSheetsService {
   private convertImagesToSheetsFormulas(content: string): string {
     // Convert image URLs to Google Sheets =IMAGE() formulas for previews
     const imageRegex = /🖼️\s*([^:]+):\s*(https?:\/\/[^\s]+)/g;
+    
     return content.replace(imageRegex, (match, alt, url) => {
-      // Create Google Sheets IMAGE formula with size constraints
-      return `🖼️ ${alt}\n=IMAGE("${url}", 1)`;
+      // Clean the URL and ensure it's properly formatted
+      const cleanUrl = url.trim().replace(/["']/g, '');
+      
+      // Create Google Sheets IMAGE formula with proper sizing
+      // Mode 1 = resize to fit cell, Mode 2 = stretch to fit, Mode 3 = original size, Mode 4 = custom size
+      return `🖼️ ${alt}\n=IMAGE("${cleanUrl}", 1)`;
     });
   }
 
+  private enhanceImagePreviews(content: string): string {
+    // Enhanced image handling with multiple URL patterns
+    let enhancedContent = content;
+    
+    // Pattern 1: Standard image markers with URLs
+    const imagePattern1 = /🖼️\s*([^:]+):\s*(https?:\/\/[^\s\n]+)/g;
+    enhancedContent = enhancedContent.replace(imagePattern1, (match, alt, url) => {
+      const cleanUrl = url.trim().replace(/["']/g, '');
+      return `=IMAGE("${cleanUrl}", 1)\n📷 ${alt}`;
+    });
+    
+    // Pattern 2: Direct URLs in content
+    const urlPattern = /(https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg))/gi;
+    enhancedContent = enhancedContent.replace(urlPattern, (match) => {
+      return `=IMAGE("${match}", 1)`;
+    });
+    
+    // Pattern 3: Image references with "Image:" prefix
+    const imageRefPattern = /Image[:\s]+([^\n]+)/g;
+    enhancedContent = enhancedContent.replace(imageRefPattern, (match, urls) => {
+      const urlList = urls.split(/[,\s]+/).filter(url => url.trim().match(/^https?:\/\//));
+      return urlList.map((url: string) => `=IMAGE("${url.trim()}", 1)`).join('\n');
+    });
+    
+    return enhancedContent;
+  }
+
   private async formatSheetsWithAutoResize(doc: GoogleSpreadsheet): Promise<void> {
-    // Enhanced formatting for better readability and auto-resize
+    // Enhanced formatting for better readability, auto-resize, and image display
     for (const sheet of doc.sheetsByIndex) {
       if (sheet.rowCount > 0) {
         // Make header row bold and set background color
@@ -444,7 +476,10 @@ export class GoogleSheetsService {
         }
         await sheet.saveUpdatedCells();
 
-        // Auto-resize columns and set text wrapping
+        // Special handling for content columns with images
+        const contentColumnIndex = this.findContentColumnIndex(sheet);
+        
+        // Auto-resize columns with special handling for content
         const requests = [];
         
         // Auto-resize all columns
@@ -458,8 +493,26 @@ export class GoogleSheetsService {
             }
           }
         });
+        
+        // Set larger column width for content columns with images
+        if (contentColumnIndex >= 0) {
+          requests.push({
+            updateDimensionProperties: {
+              range: {
+                sheetId: sheet.sheetId,
+                dimension: 'COLUMNS',
+                startIndex: contentColumnIndex,
+                endIndex: contentColumnIndex + 1
+              },
+              properties: {
+                pixelSize: 400 // Wider column for content with images
+              },
+              fields: 'pixelSize'
+            }
+          });
+        }
 
-        // Set row height to auto-resize for content
+        // Set larger row height for content with images
         requests.push({
           updateDimensionProperties: {
             range: {
@@ -469,7 +522,7 @@ export class GoogleSheetsService {
               endIndex: sheet.rowCount
             },
             properties: {
-              pixelSize: null // Auto-size
+              pixelSize: 150 // Taller rows to accommodate images
             },
             fields: 'pixelSize'
           }
@@ -494,11 +547,15 @@ export class GoogleSheetsService {
             fields: 'userEnteredFormat.wrapStrategy,userEnteredFormat.verticalAlignment'
           }
         });
-
-        // Note: More advanced formatting can be added here if needed
-        // The google-spreadsheet library has limited batch update support
       }
     }
+  }
+
+  private findContentColumnIndex(sheet: any): number {
+    // Find the column that contains "Complete Page Content" or similar
+    // Since we know the structure, return the index of the content column
+    // For the Site Structure sheet, the content column is typically index 4 (Complete Page Content)
+    return 4;
   }
 
   private async formatSheets(doc: GoogleSpreadsheet): Promise<void> {

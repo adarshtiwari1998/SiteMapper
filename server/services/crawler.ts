@@ -80,7 +80,7 @@ export class WebsiteCrawler {
       for (const sitemapPage of pagesToProcess) {
         try {
           const response = await axios.get(sitemapPage.url, {
-            timeout: 45000, // Increased timeout for AI processing
+            timeout: 60000, // Extended timeout for comprehensive AI analysis
             headers: {
               'User-Agent': 'SiteMapper Pro 1.0 - AI Website Analysis Tool'
             },

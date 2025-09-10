@@ -298,7 +298,7 @@ Keep summary detailed but under 300 words.`;
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json'
         },
-        timeout: 30000
+        timeout: 60000 // Increased timeout for complex analysis
       }
     );
 
