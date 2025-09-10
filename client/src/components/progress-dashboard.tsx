@@ -18,7 +18,7 @@ export default function ProgressDashboard({ currentJob }: ProgressDashboardProps
     data: jobData,
     refetch,
     isLoading,
-  } = useQuery({
+  } = useQuery<{job: AnalysisJob, pages: any[], totalPages: number}>({
     queryKey: ["/api/analysis", currentJob?.id],
     enabled: !!currentJob,
     refetchInterval: currentJob?.status === "running" ? 2000 : false,

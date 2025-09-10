@@ -126,7 +126,7 @@ export class GoogleSheetsService {
       'Page Title': page.title || '',
       'Page Type': page.pageType || '',
       'Status Code': page.statusCode?.toString() || '',
-      'Analysis Status': page.analysisStatus,
+      'Analysis Status': page.analysisStatus || 'pending',
       'Content Summary': page.contentSummary || '',
       'Discovered Date': page.createdAt?.toISOString().split('T')[0] || ''
     }));

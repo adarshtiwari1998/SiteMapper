@@ -163,7 +163,7 @@ export default function SitemapTable({ pages, totalPages, jobId }: SitemapTableP
               <TableRow key={page.id} className="hover:bg-secondary/50" data-testid={`page-row-${index}`}>
                 <TableCell>
                   <div className="flex items-center space-x-2">
-                    {getPageTypeIcon(page.pageType)}
+                    {getPageTypeIcon(page.pageType || undefined)}
                     <span className="text-sm text-foreground truncate max-w-sm">
                       {page.url}
                     </span>
@@ -175,13 +175,13 @@ export default function SitemapTable({ pages, totalPages, jobId }: SitemapTableP
                   </span>
                 </TableCell>
                 <TableCell>
-                  {getPageTypeBadge(page.pageType)}
+                  {getPageTypeBadge(page.pageType || undefined)}
                 </TableCell>
                 <TableCell>
-                  {getStatusBadge(page.statusCode)}
+                  {getStatusBadge(page.statusCode || undefined)}
                 </TableCell>
                 <TableCell>
-                  {getAnalysisStatusBadge(page.analysisStatus)}
+                  {getAnalysisStatusBadge(page.analysisStatus || 'pending')}
                 </TableCell>
               </TableRow>
             ))}

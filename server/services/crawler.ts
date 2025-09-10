@@ -17,10 +17,13 @@ export interface CrawlOptions {
 export class WebsiteCrawler {
   private visited = new Set<string>();
   private baseUrl: string = '';
+  private sitemapDepth = 0;
+  private readonly MAX_SITEMAP_DEPTH = 2;
 
   async crawlWebsite(websiteUrl: string, options: CrawlOptions): Promise<CrawledPage[]> {
     this.visited.clear();
     this.baseUrl = new URL(websiteUrl).origin;
+    this.sitemapDepth = 0;
     
     const pages: CrawledPage[] = [];
     const toVisit = [websiteUrl];
@@ -80,16 +83,25 @@ export class WebsiteCrawler {
     return pages;
   }
 
-  private async parseSitemap(websiteUrl: string): Promise<CrawledPage[]> {
-    const sitemapUrls = [
-      `${this.baseUrl}/sitemap.xml`,
-      `${this.baseUrl}/sitemap_index.xml`,
-      `${this.baseUrl}/sitemap-index.xml`,
-      `${this.baseUrl}/sitemaps.xml`
-    ];
+  private async parseSitemap(websiteUrl: string, isIndividualSitemap = false): Promise<CrawledPage[]> {
+    // Prevent infinite recursion
+    if (this.sitemapDepth >= this.MAX_SITEMAP_DEPTH) {
+      console.log(`Maximum sitemap depth reached (${this.MAX_SITEMAP_DEPTH}), stopping recursion`);
+      return [];
+    }
+
+    const sitemapUrls = isIndividualSitemap 
+      ? [websiteUrl] // If this is an individual sitemap URL, use it directly
+      : [
+          `${this.baseUrl}/sitemap.xml`,
+          `${this.baseUrl}/sitemap_index.xml`,
+          `${this.baseUrl}/sitemap-index.xml`,
+          `${this.baseUrl}/sitemaps.xml`
+        ];
 
     for (const sitemapUrl of sitemapUrls) {
       try {
+        console.log(`Trying to fetch sitemap: ${sitemapUrl}`);
         const response = await axios.get(sitemapUrl, { timeout: 10000 });
         const $ = cheerio.load(response.data, { xmlMode: true });
         
@@ -99,7 +111,6 @@ export class WebsiteCrawler {
         $('sitemap > loc').each((_, element) => {
           const sitemapLocation = $(element).text().trim();
           if (sitemapLocation) {
-            // TODO: Recursively parse individual sitemaps
             urls.push(sitemapLocation);
           }
         });
@@ -114,20 +125,33 @@ export class WebsiteCrawler {
 
         if (urls.length > 0) {
           // For sitemap index, we need to fetch individual sitemaps
-          if ($('sitemap').length > 0) {
+          if ($('sitemap').length > 0 && !isIndividualSitemap) {
+            console.log(`Found sitemap index with ${urls.length} sitemaps`);
             const allPages: CrawledPage[] = [];
-            for (const individualSitemapUrl of urls.slice(0, 10)) { // Limit to 10 sitemaps
+            this.sitemapDepth++; // Increase depth before recursion
+            
+            for (const individualSitemapUrl of urls.slice(0, 5)) { // Limit to 5 sitemaps
               try {
-                const individualPages = await this.parseSitemap(individualSitemapUrl);
+                console.log(`Parsing individual sitemap: ${individualSitemapUrl}`);
+                const individualPages = await this.parseSitemap(individualSitemapUrl, true);
                 allPages.push(...individualPages);
+                
+                // Limit total pages from sitemap parsing
+                if (allPages.length >= 500) {
+                  console.log(`Reached sitemap page limit (500), stopping`);
+                  break;
+                }
               } catch (error) {
                 console.error(`Error parsing individual sitemap ${individualSitemapUrl}:`, error);
               }
             }
+            
+            this.sitemapDepth--; // Decrease depth after recursion
             return allPages;
           }
 
           // Convert URLs to CrawledPage objects
+          console.log(`Found ${urls.length} URLs in sitemap`);
           return urls.map(url => ({
             url,
             title: '',
@@ -140,6 +164,7 @@ export class WebsiteCrawler {
       }
     }
 
+    console.log('No valid sitemap found, will fallback to manual crawling');
     return [];
   }
 

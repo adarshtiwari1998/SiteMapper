@@ -1,6 +1,6 @@
 import { analysisJobs, discoveredPages, users, type User, type InsertUser, type AnalysisJob, type InsertAnalysisJob, type DiscoveredPage, type InsertDiscoveredPage } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -91,8 +91,7 @@ export class DatabaseStorage implements IStorage {
 
   async getPagesByStatus(jobId: string, status: string): Promise<DiscoveredPage[]> {
     return await db.select().from(discoveredPages)
-      .where(eq(discoveredPages.jobId, jobId))
-      .where(eq(discoveredPages.analysisStatus, status));
+      .where(and(eq(discoveredPages.jobId, jobId), eq(discoveredPages.analysisStatus, status)));
   }
 }
 
