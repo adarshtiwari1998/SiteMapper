@@ -112,18 +112,20 @@ export class WebsiteCrawler {
               pageData.hasElementor = aiAnalysis.hasElementor;
               pageData.contentSummary = aiAnalysis.summary;
               
-              // Convert AI-extracted content to our format
+              // Convert AI-extracted content to our format with ACTUAL CONTENT
               if (aiAnalysis.extractedContent.sections) {
                 pageData.sections = aiAnalysis.extractedContent.sections.map((section: any, index: number) => ({
                   type: 'content' as const,
-                  title: section.heading || `Section ${index + 1}`,
-                  content: section.content || '',
+                  title: section.heading || `Content Section ${index + 1}`,
+                  content: section.content || 'No content extracted',
                   position: index
                 }));
               }
               
-              // Store complete content for sheets export
-              pageData.completeContent = this.formatCompleteContent(aiAnalysis.extractedContent);
+              // Store complete ACTUAL content for sheets export
+              pageData.completeContent = this.formatActualContent(aiAnalysis.extractedContent);
+              
+              console.log(`📝 Content preview: ${pageData.completeContent?.substring(0, 200)}...`);
               
               console.log(`✅ AI analysis completed for: ${sitemapPage.url}`);
             } catch (aiError) {
@@ -249,34 +251,48 @@ export class WebsiteCrawler {
     }
   }
 
-  private formatCompleteContent(extractedContent: any): string {
+  private formatActualContent(extractedContent: any): string {
     let content = '';
     
+    console.log('🔄 Formatting actual extracted content for display...');
+    
+    // Add title if available
     if (extractedContent.title) {
-      content += `TITLE: ${extractedContent.title}\n\n`;
+      content += `PAGE TITLE: ${extractedContent.title}\n\n`;
     }
     
-    if (extractedContent.mainContent) {
-      content += `MAIN CONTENT:\n${extractedContent.mainContent}\n\n`;
+    // Add the complete full content if available
+    if (extractedContent.fullContent && extractedContent.fullContent.trim()) {
+      content += `COMPLETE PAGE CONTENT:\n${extractedContent.fullContent}\n\n`;
     }
     
+    // Add organized sections with actual content
     if (extractedContent.sections && extractedContent.sections.length > 0) {
-      content += 'DETAILED SECTIONS:\n';
+      content += 'ORGANIZED CONTENT SECTIONS:\n\n';
       extractedContent.sections.forEach((section: any, index: number) => {
-        content += `\n📋 ${section.heading || `Section ${index + 1}`}\n`;
-        content += `${section.content}\n`;
+        const sectionTitle = section.heading || `Content Section ${index + 1}`;
+        const sectionContent = section.content || 'No content found';
         
-        if (section.images && section.images.length > 0) {
-          content += `Images: ${section.images.join(', ')}\n`;
+        content += `● ${sectionTitle}\n`;
+        content += `${sectionContent}\n\n`;
+        
+        // Add separator between sections
+        if (index < extractedContent.sections.length - 1) {
+          content += '---\n\n';
         }
       });
     }
     
-    if (extractedContent.images && extractedContent.images.length > 0) {
-      content += `\n\nALL IMAGES FOUND:\n${extractedContent.images.join('\n')}`;
+    // Add any additional content if main sections are empty
+    if ((!extractedContent.sections || extractedContent.sections.length === 0) && 
+        (!extractedContent.fullContent || extractedContent.fullContent.trim().length === 0)) {
+      content += 'NO DETAILED CONTENT EXTRACTED - Please check page accessibility or try different extraction method.';
     }
     
-    return content;
+    const finalContent = content.trim();
+    console.log(`📝 Generated content length: ${finalContent.length} characters`);
+    
+    return finalContent;
   }
 
   private async parseSitemap(websiteUrl: string, isIndividualSitemap = false): Promise<CrawledPage[]> {

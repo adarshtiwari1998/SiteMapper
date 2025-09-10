@@ -132,50 +132,41 @@ export class GLMService {
   }
 
   private async extractContentWithAI(url: string, title: string, html: string, platform: string, hasElementor: boolean): Promise<any> {
-    console.log(`🤖 Using AI to extract content from ${platform} page...`);
+    console.log(`🤖 Using AI to extract ACTUAL CONTENT from ${platform} page...`);
     
-    // Clean HTML and prepare for AI analysis
-    const cleanedHtml = html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // Use Cheerio to pre-extract structured content for AI analysis
+    const $ = cheerio.load(html);
     
-    // Limit HTML size for AI processing
-    const htmlForAI = cleanedHtml.substring(0, 8000);
+    // Extract actual text content from key areas
+    const contentAreas = this.extractActualContent($, platform, hasElementor);
     
-    const prompt = `As an expert web content analyst, analyze this ${platform}${hasElementor ? ' with Elementor' : ''} webpage and extract ALL content comprehensively.
+    const prompt = `Extract and organize ALL the actual text content from this ${platform} webpage. DO NOT SUMMARIZE - return the complete actual content.
 
 🌐 URL: ${url}
 📄 Title: ${title}
-🔧 Platform: ${platform}${hasElementor ? ' + Elementor' : ''}
 
-🔍 HTML to analyze:
-${htmlForAI}
+📝 ACTUAL CONTENT FOUND:
+${contentAreas.join('\n\n---\n\n')}
 
-📋 EXTRACTION REQUIREMENTS:
-1. **COMPLETE CONTENT EXTRACTION**: Extract ALL text content from every section
-2. **STRUCTURE AWARENESS**: Understand ${platform} architecture and ${hasElementor ? 'Elementor widget containers' : 'standard HTML structure'}
-3. **INTELLIGENT PARSING**: Identify main content areas (header, main, footer)
-4. **IMAGE DETECTION**: Find all images with proper context
-5. **SECTION ORGANIZATION**: Group content by logical sections with clear headings
+📋 REQUIREMENTS:
+1. **RETURN REAL CONTENT**: Extract ALL actual text, paragraphs, lists, and content
+2. **ORGANIZE BY SECTIONS**: Group content logically with clear headings
+3. **INCLUDE EVERYTHING**: Don't skip any text content - include complete paragraphs, lists, descriptions
+4. **NO STATISTICS**: Don't count elements - show the actual content
 
-📤 PROVIDE DETAILED JSON RESPONSE:
+Return in this format:
 {
-  "title": "extracted page title",
-  "mainContent": "complete main content as continuous text",
-  "images": ["complete list of all image URLs found"],
+  "title": "${title}",
   "sections": [
     {
-      "heading": "section heading",
-      "content": "complete section content with ALL details",
-      "images": ["images in this section"]
+      "heading": "Section name",
+      "content": "Complete actual text content from this section with all paragraphs, lists, and details"
     }
-  ]
+  ],
+  "fullContent": "All content combined as one continuous text"
 }
 
-⚠️ CRITICAL: Extract EVERYTHING - don't summarize, include complete text content from all divs, paragraphs, lists, and containers.`;
+⚠️ CRITICAL: Show ACTUAL CONTENT, not summaries or statistics!`;
 
     try {
       const response = await this.makeRequest([
@@ -189,33 +180,209 @@ ${htmlForAI}
         const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          console.log(`✅ AI extracted ${parsed.sections?.length || 0} sections from ${url}`);
+          console.log(`✅ AI extracted actual content with ${parsed.sections?.length || 0} sections from ${url}`);
           return parsed;
         }
       } catch (parseError) {
-        console.log('📝 AI response was not JSON, using as text content');
+        console.log('📝 AI response was not JSON, using as raw content');
       }
       
-      // Fallback: use AI response as main content
+      // Fallback: organize the AI response as content
       return {
         title: title || 'No title',
-        mainContent: aiResponse,
-        images: [],
         sections: [{
-          heading: 'AI Analysis',
-          content: aiResponse,
-          images: []
-        }]
+          heading: 'Main Content',
+          content: aiResponse
+        }],
+        fullContent: aiResponse
       };
     } catch (error) {
       console.error('Error in AI content extraction:', error);
+      // Return actual extracted content even if AI fails
       return {
         title: title || 'No title',
-        mainContent: 'AI content extraction failed',
-        images: [],
-        sections: []
+        sections: [{
+          heading: 'Extracted Content',
+          content: contentAreas.join('\n\n')
+        }],
+        fullContent: contentAreas.join('\n\n')
       };
     }
+  }
+
+  private extractActualContent($: cheerio.CheerioAPI, platform: string, hasElementor: boolean): string[] {
+    const contentAreas: string[] = [];
+    
+    console.log(`🔍 Extracting actual content from ${platform} page...`);
+    
+    // Extract header content
+    const headerContent = this.extractHeaderContent($);
+    if (headerContent) contentAreas.push(`HEADER CONTENT:\n${headerContent}`);
+    
+    // Extract main content based on platform
+    const mainContent = this.extractMainContentText($, platform, hasElementor);
+    if (mainContent.length > 0) {
+      contentAreas.push(...mainContent);
+    }
+    
+    // Extract footer content
+    const footerContent = this.extractFooterContent($);
+    if (footerContent) contentAreas.push(`FOOTER CONTENT:\n${footerContent}`);
+    
+    return contentAreas;
+  }
+
+  private extractHeaderContent($: cheerio.CheerioAPI): string {
+    const headerSelectors = ['header', '.header', '#header', '.site-header', 'nav', '.navbar'];
+    let content = '';
+    
+    for (const selector of headerSelectors) {
+      const $header = $(selector).first();
+      if ($header.length > 0) {
+        const text = $header.text().trim().replace(/\s+/g, ' ');
+        if (text && text.length > 20) {
+          content += text + '\n';
+        }
+      }
+    }
+    
+    return content.trim();
+  }
+
+  private extractMainContentText($: cheerio.CheerioAPI, platform: string, hasElementor: boolean): string[] {
+    const contentSections: string[] = [];
+    
+    if (hasElementor || platform === 'wordpress') {
+      // WordPress/Elementor specific extraction
+      this.extractWordPressContent($, contentSections);
+    } else if (platform === 'shopify') {
+      // Shopify specific extraction
+      this.extractShopifyContent($, contentSections);
+    } else {
+      // Generic content extraction
+      this.extractGenericContent($, contentSections);
+    }
+    
+    return contentSections;
+  }
+
+  private extractWordPressContent($: cheerio.CheerioAPI, contentSections: string[]): void {
+    // Target WordPress and Elementor structures
+    const selectors = [
+      'main', '.main', '#main',
+      '.entry-content', '.post-content', '.page-content',
+      '.elementor-widget-container', '.elementor-text-editor',
+      'article', '.content', '#content'
+    ];
+    
+    const processedContent = new Set<string>();
+    
+    for (const selector of selectors) {
+      $(selector).each((_, element) => {
+        const $element = $(element);
+        
+        // Extract paragraphs
+        $element.find('p').each((_, p) => {
+          const text = $(p).text().trim();
+          if (text && text.length > 30 && !processedContent.has(text)) {
+            contentSections.push(`PARAGRAPH:\n${text}`);
+            processedContent.add(text);
+          }
+        });
+        
+        // Extract headings with their following content
+        $element.find('h1, h2, h3, h4, h5, h6').each((_, heading) => {
+          const $heading = $(heading);
+          const headingText = $heading.text().trim();
+          
+          if (headingText && !processedContent.has(headingText)) {
+            let sectionContent = `${headingText}\n`;
+            
+            // Get content after this heading
+            let $next = $heading.next();
+            let contentFound = false;
+            
+            while ($next.length && $next.prop('tagName')?.match(/^H[1-6]$/i) === null) {
+              const nextText = $next.text().trim();
+              if (nextText && nextText.length > 20) {
+                sectionContent += nextText + '\n';
+                contentFound = true;
+              }
+              $next = $next.next();
+            }
+            
+            if (contentFound && !processedContent.has(sectionContent)) {
+              contentSections.push(`SECTION: ${sectionContent}`);
+              processedContent.add(sectionContent);
+            }
+          }
+        });
+        
+        // Extract lists
+        $element.find('ul, ol').each((_, list) => {
+          const listItems: string[] = [];
+          $(list).find('li').each((_, li) => {
+            const itemText = $(li).text().trim();
+            if (itemText) listItems.push(itemText);
+          });
+          
+          if (listItems.length > 0) {
+            const listContent = `LIST:\n${listItems.map(item => `• ${item}`).join('\n')}`;
+            if (!processedContent.has(listContent)) {
+              contentSections.push(listContent);
+              processedContent.add(listContent);
+            }
+          }
+        });
+      });
+    }
+  }
+
+  private extractShopifyContent($: cheerio.CheerioAPI, contentSections: string[]): void {
+    const selectors = [
+      '.main-content', '.product-content', '.page-content',
+      '.rte', '.product-description', '.product-info',
+      'main', 'article', '.content'
+    ];
+    
+    for (const selector of selectors) {
+      $(selector).each((_, element) => {
+        const text = $(element).text().trim().replace(/\s+/g, ' ');
+        if (text && text.length > 50) {
+          contentSections.push(`SHOPIFY CONTENT:\n${text}`);
+        }
+      });
+    }
+  }
+
+  private extractGenericContent($: cheerio.CheerioAPI, contentSections: string[]): void {
+    const selectors = ['main', 'article', '.content', '#content', '.main', '.page-content'];
+    
+    for (const selector of selectors) {
+      $(selector).each((_, element) => {
+        const text = $(element).text().trim().replace(/\s+/g, ' ');
+        if (text && text.length > 50) {
+          contentSections.push(`MAIN CONTENT:\n${text}`);
+        }
+      });
+    }
+  }
+
+  private extractFooterContent($: cheerio.CheerioAPI): string {
+    const footerSelectors = ['footer', '.footer', '#footer', '.site-footer'];
+    let content = '';
+    
+    for (const selector of footerSelectors) {
+      const $footer = $(selector).first();
+      if ($footer.length > 0) {
+        const text = $footer.text().trim().replace(/\s+/g, ' ');
+        if (text && text.length > 20) {
+          content += text + '\n';
+        }
+      }
+    }
+    
+    return content.trim();
   }
 
   private async analyzeStructureWithAI(url: string, title: string, html: string, platform: string): Promise<any> {
