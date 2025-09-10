@@ -102,35 +102,29 @@ export class WebsiteCrawler {
             statusCode: response.status
           };
 
-          // AI-ENHANCED ANALYSIS - Use AI for comprehensive content extraction
+          // ENHANCED ANALYSIS - Use AI only for structure analysis, not content rewriting
           if (options.useAI && glmService && options.deepAnalysis) {
             try {
-              console.log(`🤖 Running AI analysis for: ${sitemapPage.url}`);
-              const aiAnalysis = await glmService.deepAnalyzePageStructure(sitemapPage.url, title);
+              console.log(`🤖 Running AI structure analysis for: ${sitemapPage.url}`);
+              
+              // First extract exact content without AI rewriting
+              pageData.completeContent = this.extractExactContentInOrder($, sitemapPage.url);
+              console.log(`📝 Extracted ${pageData.completeContent?.length || 0} characters of exact content`);
+              
+              // Then use AI only for structure analysis and summary
+              const aiAnalysis = await glmService.analyzePageStructureOnly(sitemapPage.url, title, response.data);
               
               pageData.aiAnalysis = aiAnalysis;
               pageData.detectedPlatform = aiAnalysis.detectedPlatform;
               pageData.hasElementor = aiAnalysis.hasElementor;
               pageData.contentSummary = aiAnalysis.summary;
               
-              // Convert AI-extracted content to our format with ACTUAL CONTENT
-              if (aiAnalysis.extractedContent.sections) {
-                pageData.sections = aiAnalysis.extractedContent.sections.map((section: any, index: number) => ({
-                  type: 'content' as const,
-                  title: section.heading || `Content Section ${index + 1}`,
-                  content: section.content || 'No content extracted',
-                  position: index
-                }));
-              }
+              // Create sections from the exact content (not AI-rewritten)
+              pageData.sections = this.createSectionsFromExactContent($);
               
-              // Store complete ACTUAL content for sheets export
-              pageData.completeContent = this.formatActualContent(aiAnalysis.extractedContent);
-              
-              console.log(`📝 Content preview: ${pageData.completeContent?.substring(0, 200)}...`);
-              
-              console.log(`✅ AI analysis completed for: ${sitemapPage.url}`);
+              console.log(`✅ Analysis completed for: ${sitemapPage.url}`);
             } catch (aiError) {
-              console.error(`⚠️ AI analysis failed for ${sitemapPage.url}, falling back to traditional extraction:`, aiError);
+              console.error(`⚠️ AI analysis failed for ${sitemapPage.url}, using traditional extraction:`, aiError);
               // Fallback to traditional analysis
               await this.performTraditionalAnalysis(pageData, $, options, sitemapPage.url);
             }
@@ -291,31 +285,27 @@ export class WebsiteCrawler {
           statusCode: response.status
         };
 
-        // AI-ENHANCED ANALYSIS with real-time processing
+        // ENHANCED ANALYSIS with real-time processing
         if (options.useAI && glmService && options.deepAnalysis) {
           try {
-            console.log(`🤖 Running real-time AI analysis for: ${sitemapPage.url}`);
-            const aiAnalysis = await glmService.deepAnalyzePageStructure(sitemapPage.url, title);
+            console.log(`🤖 Running real-time AI structure analysis for: ${sitemapPage.url}`);
+            
+            // First extract exact content without AI rewriting
+            pageData.completeContent = this.extractExactContentInOrder($, sitemapPage.url);
+            console.log(`📝 Extracted ${pageData.completeContent?.length || 0} characters of exact content`);
+            
+            // Then use AI only for structure analysis and summary
+            const aiAnalysis = await glmService.analyzePageStructureOnly(sitemapPage.url, title, response.data);
             
             pageData.aiAnalysis = aiAnalysis;
             pageData.detectedPlatform = aiAnalysis.detectedPlatform;
             pageData.hasElementor = aiAnalysis.hasElementor;
             pageData.contentSummary = aiAnalysis.summary;
             
-            // Convert AI-extracted content to our format with ACTUAL CONTENT
-            if (aiAnalysis.extractedContent.sections) {
-              pageData.sections = aiAnalysis.extractedContent.sections.map((section: any, index: number) => ({
-                type: 'content' as const,
-                title: section.heading || `Content Section ${index + 1}`,
-                content: section.content || 'No content extracted',
-                position: index
-              }));
-            }
+            // Create sections from the exact content (not AI-rewritten)
+            pageData.sections = this.createSectionsFromExactContent($);
             
-            // Store complete ACTUAL content for sheets export
-            pageData.completeContent = this.formatActualContent(aiAnalysis.extractedContent);
-            
-            console.log(`✅ AI analysis completed - Content length: ${pageData.completeContent?.length || 0} chars`);
+            console.log(`✅ Analysis completed - Content length: ${pageData.completeContent?.length || 0} chars`);
           } catch (aiError) {
             console.error(`⚠️ AI analysis failed for ${sitemapPage.url}, using traditional extraction:`, aiError);
             await this.performTraditionalAnalysis(pageData, $, options, sitemapPage.url);
@@ -378,6 +368,9 @@ export class WebsiteCrawler {
       pageData.headings = this.extractHeadings($);
       pageData.contentSummary = this.generateContentSummary($);
       pageData.pageStructure = this.analyzePageStructure($);
+      
+      // Extract complete content in exact HTML order without AI rewriting
+      pageData.completeContent = this.extractExactContentInOrder($, url);
     }
 
     // Extract images if enabled
@@ -901,5 +894,133 @@ export class WebsiteCrawler {
     if (lists > 0) structure.push(`${lists} lists`);
 
     return structure.join(', ');
+  }
+
+  /**
+   * Extract content exactly as it appears in HTML in correct top-to-bottom order
+   * WITHOUT any AI rewriting or modification
+   */
+  private extractExactContentInOrder($: cheerio.CheerioAPI, url: string): string {
+    console.log(`🔍 Extracting exact content in HTML order for: ${url}`);
+    
+    const content: string[] = [];
+    const processedElements = new Set<string>();
+    
+    // Extract content from body in the exact order it appears in HTML
+    $('body *').each((_, element) => {
+      const $el = $(element);
+      const tagName = element.tagName?.toLowerCase();
+      
+      // Skip script, style, and other non-content elements
+      if (['script', 'style', 'noscript', 'meta', 'link', 'head'].includes(tagName || '')) {
+        return;
+      }
+      
+      // Get direct text content (not including children)
+      const directText = $el.contents().filter(function() {
+        return this.nodeType === 3; // Text nodes only
+      }).text().trim();
+      
+      if (directText && directText.length > 10) {
+        const elementIdentifier = `${tagName}_${directText.substring(0, 50)}`;
+        if (!processedElements.has(elementIdentifier)) {
+          // Add heading indicators for structure
+          if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName || '')) {
+            content.push(`\n=== ${tagName?.toUpperCase()} HEADING ===\n${directText}\n`);
+          } else if (tagName === 'p') {
+            content.push(`\n${directText}\n`);
+          } else if (['li'].includes(tagName || '')) {
+            content.push(`• ${directText}`);
+          } else if (directText.length > 20) {
+            content.push(`${directText}`);
+          }
+          processedElements.add(elementIdentifier);
+        }
+      }
+    });
+    
+    // Extract images with their exact position
+    $('img').each((index, img) => {
+      const $img = $(img);
+      const src = $img.attr('src');
+      const alt = $img.attr('alt') || 'No alt text';
+      
+      if (src) {
+        // Resolve relative URLs
+        const absoluteSrc = src.startsWith('http') ? src : new URL(src, url).href;
+        content.push(`\n🖼️ IMAGE: ${alt}\nURL: ${absoluteSrc}\n`);
+      }
+    });
+    
+    const finalContent = content.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    console.log(`📝 Extracted ${finalContent.length} characters of exact content`);
+    
+    return finalContent;
+  }
+
+  /**
+   * Create structured sections from exact HTML content without AI modification
+   */
+  private createSectionsFromExactContent($: cheerio.CheerioAPI): PageSection[] {
+    const sections: PageSection[] = [];
+    let position = 0;
+    
+    // Extract headings and their following content in order
+    $('h1, h2, h3, h4, h5, h6').each((_, heading) => {
+      const $heading = $(heading);
+      const headingText = $heading.text().trim();
+      const level = parseInt(heading.tagName?.charAt(1) || '1');
+      
+      if (headingText) {
+        // Get all content until the next heading of same or higher level
+        let sectionContent = '';
+        let $next = $heading.next();
+        
+        while ($next.length > 0) {
+          const nextTagName = $next.prop('tagName')?.toLowerCase();
+          
+          // Stop if we hit another heading of same or higher level
+          if (nextTagName?.match(/^h[1-6]$/)) {
+            const nextLevel = parseInt(nextTagName.charAt(1));
+            if (nextLevel <= level) break;
+          }
+          
+          const text = $next.text().trim();
+          if (text && text.length > 10) {
+            sectionContent += text + '\n';
+          }
+          
+          $next = $next.next();
+        }
+        
+        sections.push({
+          type: 'heading',
+          level,
+          title: headingText,
+          content: sectionContent.trim(),
+          position: position++
+        });
+      }
+    });
+    
+    // Extract standalone paragraphs not under headings
+    $('p').each((_, p) => {
+      const $p = $(p);
+      const text = $p.text().trim();
+      
+      // Check if this paragraph is not already captured under a heading
+      const hasParentHeading = $p.prevAll('h1, h2, h3, h4, h5, h6').length > 0;
+      
+      if (text && text.length > 20 && !hasParentHeading) {
+        sections.push({
+          type: 'content',
+          title: 'Paragraph',
+          content: text,
+          position: position++
+        });
+      }
+    });
+    
+    return sections;
   }
 }

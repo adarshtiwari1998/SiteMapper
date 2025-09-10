@@ -129,6 +129,8 @@ export class GoogleSheetsService {
         'URL',
         'Status',
         'Complete Page Content & Structure',
+        'Readable Text Format',
+        'JSON Data',
         'AI Content Summary'
       ]
     });
@@ -194,12 +196,36 @@ export class GoogleSheetsService {
           aiSummary += ' (with Elementor)';
         }
 
+        // Create readable text format from the exact content
+        const readableText = this.convertToReadableText(completeContent, page);
+        
+        // Create JSON data for developers
+        const jsonData = JSON.stringify({
+          url: page.url,
+          title: page.title,
+          pageType: page.pageType,
+          statusCode: page.statusCode,
+          completeContent: completeContent,
+          sectionsData: page.sectionsData || [],
+          imagesData: page.imagesData || [],
+          headingsData: page.headingsData || [],
+          metaDescription: page.metaDescription,
+          pageStructure: page.pageStructure,
+          aiAnalysis: {
+            detectedPlatform: page.detectedPlatform,
+            hasElementor: page.hasElementor,
+            contentSummary: page.contentSummary
+          }
+        }, null, 2);
+
         return {
           'Page Type': `${this.getPageTypeIcon(page.pageType || 'page')} ${(page.pageType || 'page').toUpperCase()}`,
           'Page Title': page.title || 'No Title',
           'URL': page.url,
           'Status': page.statusCode === 200 ? '✅ OK' : `❌ ${page.statusCode}`,
           'Complete Page Content & Structure': completeContent || 'No content analyzed',
+          'Readable Text Format': readableText,
+          'JSON Data': jsonData,
           'AI Content Summary': aiSummary
         };
       });
@@ -567,6 +593,40 @@ export class GoogleSheetsService {
         });
       }
     }
+  }
+
+  private convertToReadableText(content: string, page: any): string {
+    if (!content) return 'No content available';
+    
+    // Convert the raw content to a more readable format
+    let readableText = content
+      // Remove excessive newlines
+      .replace(/\n{3,}/g, '\n\n')
+      // Clean up heading markers
+      .replace(/=== ([^=]+) HEADING ===\n/g, '\n**$1**\n')
+      // Format image references better
+      .replace(/🖼️ IMAGE: ([^\n]+)\nURL: ([^\n]+)/g, '📷 Image: $1 (URL: $2)')
+      // Clean up bullet points
+      .replace(/• /g, '• ')
+      // Add spacing around sections
+      .replace(/\n([A-Z][^:]+):\n/g, '\n\n$1:\n')
+      .trim();
+
+    // Add page metadata at the top
+    const metadata = [
+      `📄 Page: ${page.title || 'No Title'}`,
+      `🌐 URL: ${page.url}`,
+      `📊 Status: ${page.statusCode === 200 ? 'OK' : `Error ${page.statusCode}`}`,
+      `🔧 Platform: ${page.detectedPlatform || 'Unknown'}`
+    ];
+    
+    if (page.metaDescription) {
+      metadata.push(`📝 Description: ${page.metaDescription}`);
+    }
+    
+    readableText = metadata.join('\n') + '\n\n' + '─'.repeat(50) + '\n\n' + readableText;
+    
+    return readableText;
   }
 
   private findContentColumnIndex(sheet: any): number {

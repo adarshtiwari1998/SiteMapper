@@ -59,6 +59,55 @@ export class GLMService {
     }
   }
 
+  /**
+   * Analyze only page structure - DO NOT extract or rewrite content
+   * Use this for getting AI insights about page architecture without content modification
+   */
+  async analyzePageStructureOnly(url: string, title: string, html: string): Promise<PageStructureAnalysis> {
+    try {
+      console.log(`🔍 Starting AI structure-only analysis for: ${url}`);
+      
+      const $ = cheerio.load(html);
+      
+      // Detect platform and architecture
+      const platform = this.detectPlatform(html, $);
+      const hasElementor = html.includes('elementor') || html.includes('Elementor');
+      
+      console.log(`🏗️ Detected platform: ${platform}, Elementor: ${hasElementor}`);
+      
+      // Analyze page structure with AI (no content extraction)
+      const structureAnalysis = await this.analyzeStructureWithAI(url, title, html, platform);
+      
+      return {
+        detectedPlatform: platform,
+        hasElementor,
+        contentAreas: structureAnalysis.contentAreas,
+        extractedContent: {
+          title: title || 'No title',
+          mainContent: '', // No content extraction - this is handled separately
+          images: [],
+          sections: []
+        },
+        summary: structureAnalysis.summary
+      };
+    } catch (error) {
+      console.error(`Error in structure analysis for ${url}:`, error);
+      // Return fallback analysis
+      return {
+        detectedPlatform: 'other',
+        hasElementor: false,
+        contentAreas: { header: [], main: [], footer: [] },
+        extractedContent: {
+          title: title || 'No title',
+          mainContent: '',
+          images: [],
+          sections: []
+        },
+        summary: 'Structure analysis failed - unable to process page'
+      };
+    }
+  }
+
   async deepAnalyzePageStructure(url: string, title: string): Promise<PageStructureAnalysis> {
     try {
       console.log(`🔍 Starting deep AI analysis for: ${url}`);
