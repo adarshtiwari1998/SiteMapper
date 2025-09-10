@@ -255,7 +255,8 @@ async function processAnalysisJob(jobId: string) {
     const crawler = new WebsiteCrawler();
     const pages = await crawler.crawlWebsite(job.websiteUrl, {
       maxPages: job.maxPages || 100,
-      includeImages: job.includeImages || false
+      includeImages: job.includeImages || false,
+      deepAnalysis: job.deepAnalysis || false
     });
 
     // Save discovered pages
