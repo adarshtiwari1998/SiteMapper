@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { URL } from 'url';
+import { GLMService } from './glm-api';
 
 export interface PageSection {
   type: 'heading' | 'content' | 'list' | 'table' | 'form' | 'navigation';
@@ -31,12 +32,19 @@ export interface CrawledPage {
   headings?: { level: number; text: string }[];
   contentSummary?: string;
   pageStructure?: string;
+  // AI-enhanced analysis
+  aiAnalysis?: any;
+  detectedPlatform?: string;
+  hasElementor?: boolean;
+  completeContent?: string;
 }
 
 export interface CrawlOptions {
   maxPages: number;
   includeImages: boolean;
   deepAnalysis: boolean;
+  useAI?: boolean;
+  glmApiKey?: string;
 }
 
 export class WebsiteCrawler {
@@ -53,21 +61,28 @@ export class WebsiteCrawler {
     const pages: CrawledPage[] = [];
     const toVisit = [websiteUrl];
 
+    // Initialize AI service if enabled
+    let glmService: GLMService | undefined;
+    if (options.useAI && options.glmApiKey) {
+      glmService = new GLMService(options.glmApiKey);
+      console.log('🤖 AI-powered analysis enabled for deep content extraction');
+    }
+
     // First try to get sitemap.xml
     const sitemapPages = await this.parseSitemap(websiteUrl);
     if (sitemapPages.length > 0) {
-      console.log(`Found ${sitemapPages.length} pages from sitemap, starting deep analysis...`);
+      console.log(`Found ${sitemapPages.length} pages from sitemap, starting intelligent analysis...`);
       
-      // Process sitemap pages with deep analysis if enabled
+      // Process sitemap pages with AI-enhanced analysis
       const processedPages: CrawledPage[] = [];
       const pagesToProcess = sitemapPages.slice(0, options.maxPages);
       
       for (const sitemapPage of pagesToProcess) {
         try {
           const response = await axios.get(sitemapPage.url, {
-            timeout: 30000,
+            timeout: 45000, // Increased timeout for AI processing
             headers: {
-              'User-Agent': 'SiteMapper Pro 1.0 - Website Analysis Tool'
+              'User-Agent': 'SiteMapper Pro 1.0 - AI Website Analysis Tool'
             },
             maxRedirects: 5,
             validateStatus: function (status) {
@@ -86,22 +101,43 @@ export class WebsiteCrawler {
             statusCode: response.status
           };
 
-          // Perform deep analysis if enabled
-          if (options.deepAnalysis) {
-            pageData.sections = this.extractPageSections($);
-            pageData.metaDescription = $('meta[name="description"]').attr('content') || '';
-            pageData.headings = this.extractHeadings($);
-            pageData.contentSummary = this.generateContentSummary($);
-            pageData.pageStructure = this.analyzePageStructure($);
-          }
-
-          // Extract images if enabled
-          if (options.includeImages) {
-            pageData.images = this.extractImages($, sitemapPage.url);
+          // AI-ENHANCED ANALYSIS - Use AI for comprehensive content extraction
+          if (options.useAI && glmService && options.deepAnalysis) {
+            try {
+              console.log(`🤖 Running AI analysis for: ${sitemapPage.url}`);
+              const aiAnalysis = await glmService.deepAnalyzePageStructure(sitemapPage.url, title);
+              
+              pageData.aiAnalysis = aiAnalysis;
+              pageData.detectedPlatform = aiAnalysis.detectedPlatform;
+              pageData.hasElementor = aiAnalysis.hasElementor;
+              pageData.contentSummary = aiAnalysis.summary;
+              
+              // Convert AI-extracted content to our format
+              if (aiAnalysis.extractedContent.sections) {
+                pageData.sections = aiAnalysis.extractedContent.sections.map((section: any, index: number) => ({
+                  type: 'content' as const,
+                  title: section.heading || `Section ${index + 1}`,
+                  content: section.content || '',
+                  position: index
+                }));
+              }
+              
+              // Store complete content for sheets export
+              pageData.completeContent = this.formatCompleteContent(aiAnalysis.extractedContent);
+              
+              console.log(`✅ AI analysis completed for: ${sitemapPage.url}`);
+            } catch (aiError) {
+              console.error(`⚠️ AI analysis failed for ${sitemapPage.url}, falling back to traditional extraction:`, aiError);
+              // Fallback to traditional analysis
+              await this.performTraditionalAnalysis(pageData, $, options, sitemapPage.url);
+            }
+          } else {
+            // Traditional analysis if AI is not enabled
+            await this.performTraditionalAnalysis(pageData, $, options, sitemapPage.url);
           }
 
           processedPages.push(pageData);
-          console.log(`Processed page ${processedPages.length}/${pagesToProcess.length}: ${sitemapPage.url}`);
+          console.log(`📊 Processed page ${processedPages.length}/${pagesToProcess.length}: ${sitemapPage.url}`);
           
         } catch (error) {
           console.error(`Error processing sitemap page ${sitemapPage.url}:`, error);
@@ -195,6 +231,52 @@ export class WebsiteCrawler {
     }
 
     return pages;
+  }
+
+  private async performTraditionalAnalysis(pageData: CrawledPage, $: cheerio.CheerioAPI, options: CrawlOptions, url: string): Promise<void> {
+    // Perform traditional deep analysis if enabled
+    if (options.deepAnalysis) {
+      pageData.sections = this.extractPageSections($);
+      pageData.metaDescription = $('meta[name="description"]').attr('content') || '';
+      pageData.headings = this.extractHeadings($);
+      pageData.contentSummary = this.generateContentSummary($);
+      pageData.pageStructure = this.analyzePageStructure($);
+    }
+
+    // Extract images if enabled
+    if (options.includeImages) {
+      pageData.images = this.extractImages($, url);
+    }
+  }
+
+  private formatCompleteContent(extractedContent: any): string {
+    let content = '';
+    
+    if (extractedContent.title) {
+      content += `TITLE: ${extractedContent.title}\n\n`;
+    }
+    
+    if (extractedContent.mainContent) {
+      content += `MAIN CONTENT:\n${extractedContent.mainContent}\n\n`;
+    }
+    
+    if (extractedContent.sections && extractedContent.sections.length > 0) {
+      content += 'DETAILED SECTIONS:\n';
+      extractedContent.sections.forEach((section: any, index: number) => {
+        content += `\n📋 ${section.heading || `Section ${index + 1}`}\n`;
+        content += `${section.content}\n`;
+        
+        if (section.images && section.images.length > 0) {
+          content += `Images: ${section.images.join(', ')}\n`;
+        }
+      });
+    }
+    
+    if (extractedContent.images && extractedContent.images.length > 0) {
+      content += `\n\nALL IMAGES FOUND:\n${extractedContent.images.join('\n')}`;
+    }
+    
+    return content;
   }
 
   private async parseSitemap(websiteUrl: string, isIndividualSitemap = false): Promise<CrawledPage[]> {

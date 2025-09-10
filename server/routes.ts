@@ -251,12 +251,14 @@ async function processAnalysisJob(jobId: string) {
       progress: 25 
     });
 
-    // Step 2: Crawl website
+    // Step 2: Crawl website with AI-enhanced analysis
     const crawler = new WebsiteCrawler();
     const pages = await crawler.crawlWebsite(job.websiteUrl, {
       maxPages: job.maxPages || 100,
       includeImages: job.includeImages !== false, // Default to true
-      deepAnalysis: job.deepAnalysis !== false // Default to true for section analysis
+      deepAnalysis: job.deepAnalysis !== false, // Default to true for section analysis
+      useAI: !!job.glmApiKey, // Enable AI if GLM API key is provided
+      glmApiKey: job.glmApiKey || undefined
     });
 
     // Save discovered pages with deep analysis data
@@ -268,12 +270,12 @@ async function processAnalysisJob(jobId: string) {
         pageType: page.type,
         statusCode: page.statusCode,
         analysisStatus: "completed",
-        contentSummary: page.contentSummary,
-        metaDescription: page.metaDescription,
-        pageStructure: page.pageStructure,
-        sectionsData: page.sections,
-        imagesData: page.images,
-        headingsData: page.headings
+        contentSummary: page.contentSummary || null,
+        metaDescription: page.metaDescription || null,
+        pageStructure: page.pageStructure || null,
+        sectionsData: page.sections || null,
+        imagesData: page.images || null,
+        headingsData: page.headings || null
       });
     }
 
@@ -292,7 +294,7 @@ async function processAnalysisJob(jobId: string) {
         try {
           await storage.updateDiscoveredPage(page.id, { analysisStatus: "processing" });
           
-          const analysis = await glmService.analyzePageContent(page.url, page.title || '');
+          const analysis = await glmService.analyzePageContent(page.url, page.title || 'No title');
           
           await storage.updateDiscoveredPage(page.id, {
             contentSummary: analysis,
@@ -323,9 +325,9 @@ async function processAnalysisJob(jobId: string) {
           technologies,
           pages: finalPages.map(page => ({
             ...page,
-            sectionsData: page.sectionsData as any[] || undefined,
-            imagesData: page.imagesData as any[] || undefined,
-            headingsData: page.headingsData as any[] || undefined,
+            sectionsData: page.sectionsData as any[] || [],
+            imagesData: page.imagesData as any[] || [],
+            headingsData: page.headingsData as any[] || [],
             metaDescription: page.metaDescription || undefined,
             pageStructure: page.pageStructure || undefined
           }))
