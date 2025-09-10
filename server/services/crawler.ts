@@ -355,17 +355,18 @@ export class WebsiteCrawler {
   private extractHeaderContent($: cheerio.CheerioAPI, sections: PageSection[], startPosition: number): void {
     let position = startPosition;
     
-    $('header, .header, #header, #site-header, .site-header').each((_, element) => {
+    $('header, .header, #header, #site-header, .site-header').first().each((_, element) => {
       const $header = $(element);
       
-      // Extract navigation links cleanly
-      const navLinks: string[] = [];
+      // Extract navigation links cleanly with deduplication
+      const navLinksSet = new Set<string>();
       $header.find('a, .menu-item').each((_, linkEl) => {
         const linkText = $(linkEl).text().trim();
         if (linkText && linkText.length > 1 && linkText.length < 50) {
-          navLinks.push(linkText);
+          navLinksSet.add(linkText);
         }
       });
+      const navLinks = Array.from(navLinksSet);
       
       // Extract header text content (excluding navigation)
       let headerText = $header.clone().find('nav, .nav, .menu').remove().end().text().trim().replace(/\s+/g, ' ');
@@ -407,83 +408,113 @@ export class WebsiteCrawler {
       if ($main.length > 0) {
         console.log(`Extracting content from: ${selector}`);
         
-        // Extract headings with their following content
+        // Extract content sections organized by headings
         $main.find('h1, h2, h3, h4, h5, h6').each((_, headingEl) => {
           const $heading = $(headingEl);
           const level = parseInt(headingEl.tagName.charAt(1));
           const title = $heading.text().trim();
           
           if (title) {
-            // Collect all content until next heading
             let content = '';
             let images: string[] = [];
             
+            // Find the parent container of this heading
+            const $section = $heading.closest('div, section, article').length > 0 
+              ? $heading.closest('div, section, article') 
+              : $heading.parent();
+            
+            // Extract all text content from this section (paragraphs, lists, divs)
+            $section.find('p, li, div').not($heading).each((_, contentEl) => {
+              const $contentEl = $(contentEl);
+              // Skip if this element contains other headings (to avoid mixing sections)
+              if ($contentEl.find('h1, h2, h3, h4, h5, h6').length === 0) {
+                const text = $contentEl.text().trim();
+                if (text && text.length > 5 && !content.includes(text)) {
+                  content += text + '\n';
+                }
+              }
+            });
+            
+            // Also try to get content from next siblings until next heading
             let $next = $heading.next();
             while ($next.length && !$next.is('h1, h2, h3, h4, h5, h6')) {
-              
-              // Extract text content
               const text = $next.text().trim();
-              if (text && text.length > 20) {
-                content += text + '\n\n';
+              if (text && text.length > 10 && !content.includes(text)) {
+                content += text + '\n';
               }
               
               // Extract images in this section
-              $next.find('img').each((_, imgEl) => {
+              $next.find('img').add($next.filter('img')).each((_, imgEl) => {
                 const $img = $(imgEl);
                 const src = $img.attr('src');
                 const alt = $img.attr('alt') || 'No description';
                 if (src) {
-                  images.push(`🖼️ ${alt}: ${src}`);
+                  const fullSrc = src.startsWith('http') ? src : `https://www.ssfplastics.com${src}`;
+                  images.push(`🖼️ ${alt}: ${fullSrc}`);
                 }
               });
               
               $next = $next.next();
-              if (content.length > 3000) break; // Prevent too much content
+              if (content.length > 4000) break;
             }
             
-            // Combine content and images
+            // Extract images near the heading
+            $heading.siblings('img').add($heading.parent().find('img')).each((_, imgEl) => {
+              const $img = $(imgEl);
+              const src = $img.attr('src');
+              const alt = $img.attr('alt') || 'No description';
+              if (src) {
+                const fullSrc = src.startsWith('http') ? src : `https://www.ssfplastics.com${src}`;
+                images.push(`🖼️ ${alt}: ${fullSrc}`);
+              }
+            });
+            
+            // Clean up content and combine with images
+            content = content.trim().replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ');
             const fullContent = [
-              content.trim(),
-              images.length > 0 ? '\n' + images.join('\n') : ''
+              content || 'No detailed content found for this section',
+              images.length > 0 ? '\nImages:\n' + images.join('\n') : ''
             ].filter(Boolean).join('');
             
             sections.push({
               type: 'heading',
               level,
               title: `📝 ${title}`,
-              content: fullContent || 'No content available for this section',
+              content: fullContent,
               position: position++
             });
           }
         });
         
-        // Extract standalone paragraphs not under headings
-        $main.children('p, div.content, div.text-content').each((_, paraEl) => {
-          const $para = $(paraEl);
-          const text = $para.text().trim();
-          if (text && text.length > 50) {
-            // Check for images in this paragraph section
-            let images: string[] = [];
-            $para.find('img').each((_, imgEl) => {
-              const $img = $(imgEl);
-              const src = $img.attr('src');
-              const alt = $img.attr('alt') || 'No description';
-              if (src) {
-                images.push(`🖼️ ${alt}: ${src}`);
-              }
-            });
-            
-            const fullContent = [
-              text,
-              images.length > 0 ? '\n' + images.join('\n') : ''
-            ].filter(Boolean).join('');
-            
-            sections.push({
-              type: 'content',
-              title: '📄 Content Section',
-              content: fullContent,
-              position: position++
-            });
+        // Extract any standalone content blocks that aren't under headings
+        $main.children().each((_, element) => {
+          const $el = $(element);
+          if (!$el.is('h1, h2, h3, h4, h5, h6') && !$el.find('h1, h2, h3, h4, h5, h6').length) {
+            const text = $el.text().trim();
+            if (text && text.length > 100) {
+              let images: string[] = [];
+              $el.find('img').each((_, imgEl) => {
+                const $img = $(imgEl);
+                const src = $img.attr('src');
+                const alt = $img.attr('alt') || 'No description';
+                if (src) {
+                  const fullSrc = src.startsWith('http') ? src : `https://www.ssfplastics.com${src}`;
+                  images.push(`🖼️ ${alt}: ${fullSrc}`);
+                }
+              });
+              
+              const fullContent = [
+                text,
+                images.length > 0 ? '\nImages:\n' + images.join('\n') : ''
+              ].filter(Boolean).join('');
+              
+              sections.push({
+                type: 'content',
+                title: '📄 Content Block',
+                content: fullContent,
+                position: position++
+              });
+            }
           }
         });
         
