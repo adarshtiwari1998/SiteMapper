@@ -925,7 +925,7 @@ export class WebsiteCrawler {
    * Recursively walk through elements to extract ALL content including nested ul/li and div children
    */
   private walkElementsInOrder(
-    $parent: cheerio.Cheerio<cheerio.Element>, 
+    $parent: any, 
     $: cheerio.CheerioAPI, 
     content: string[], 
     processedElements: Set<string>,
@@ -1008,11 +1008,11 @@ export class WebsiteCrawler {
   /**
    * Extract ul/ol lists with proper bullet formatting
    */
-  private extractListContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>, tagName: string): void {
+  private extractListContent($el: any, content: string[], processedElements: Set<string>, tagName: string): void {
     const listItems: string[] = [];
     
     $el.find('li').each((index, item) => {
-      const $item = $(item);
+      const $item = $el.find('li').eq(index);
       const itemText = $item.text().trim();
       
       if (itemText && itemText.length > 2) {
@@ -1033,7 +1033,7 @@ export class WebsiteCrawler {
   /**
    * Extract div content including all nested children
    */
-  private extractDivContent($el: cheerio.Cheerio<cheerio.Element>, $: cheerio.CheerioAPI, content: string[], processedElements: Set<string>, url: string): void {
+  private extractDivContent($el: any, $: cheerio.CheerioAPI, content: string[], processedElements: Set<string>, url: string): void {
     // Get all text content from div and its children
     const divText = $el.text().trim();
     
@@ -1058,7 +1058,7 @@ export class WebsiteCrawler {
   /**
    * Extract heading content with proper formatting
    */
-  private extractHeadingContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>, tagName: string): void {
+  private extractHeadingContent($el: any, content: string[], processedElements: Set<string>, tagName: string): void {
     const headingText = $el.text().trim();
     
     if (headingText && headingText.length > 2) {
@@ -1073,7 +1073,7 @@ export class WebsiteCrawler {
   /**
    * Extract paragraph content
    */
-  private extractParagraphContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>): void {
+  private extractParagraphContent($el: any, content: string[], processedElements: Set<string>): void {
     const paragraphText = $el.text().trim();
     
     if (paragraphText && paragraphText.length > 10) {
@@ -1088,7 +1088,7 @@ export class WebsiteCrawler {
   /**
    * Extract image content with enhanced formatting
    */
-  private extractImageContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], url: string): void {
+  private extractImageContent($el: any, content: string[], url: string): void {
     const src = $el.attr('src');
     const alt = $el.attr('alt') || 'No alt text';
     const title = $el.attr('title') || '';
@@ -1103,7 +1103,7 @@ export class WebsiteCrawler {
   /**
    * Extract table content with structure
    */
-  private extractTableContent($el: cheerio.Cheerio<cheerio.Element>, content: string[], processedElements: Set<string>): void {
+  private extractTableContent($el: any, content: string[], processedElements: Set<string>): void {
     const tableText = $el.text().trim();
     
     if (tableText && tableText.length > 20) {
