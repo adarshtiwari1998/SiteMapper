@@ -141,18 +141,26 @@ export class GoogleSheetsService {
         return aIndex - bIndex;
       })
       .map(page => {
-        // Compile comprehensive page content including header, content, and footer
+        // Display ACTUAL EXTRACTED CONTENT instead of summaries
         let completeContent = '';
-        if (page.sectionsData && Array.isArray(page.sectionsData)) {
+        
+        // First, try to get the complete content from AI analysis
+        if (page.completeContent && page.completeContent.trim()) {
+          completeContent = page.completeContent;
+          console.log(`📝 Using AI-extracted content for ${page.url} (${completeContent.length} chars)`);
+        } else if (page.sectionsData && Array.isArray(page.sectionsData)) {
+          // Fallback to sections data with actual content
           completeContent = page.sectionsData.map((section: any) => {
             const sectionIcon = this.getSectionIcon(section.type);
             const sectionTitle = section.title || 'Content Section';
-            let content = section.content || 'No content';
+            let content = section.content || 'No content extracted';
             
             // Enhanced image preview conversion for Google Sheets
             content = this.enhanceImagePreviews(content);
             return `${sectionIcon} ${sectionTitle}\n${content}`;
-          }).join('\n\n---\n\n');
+          }).join('\n\n=== SECTION BREAK ===\n\n');
+        } else {
+          completeContent = 'NO CONTENT EXTRACTED - Analysis may have failed or page may be inaccessible';
         }
         
         // Add page structure information
@@ -167,13 +175,23 @@ export class GoogleSheetsService {
         
         // NOTE: Removed "Additional Images" section - images are now inline with content
 
-        // Enhanced AI summary
-        let aiSummary = page.contentSummary || 'No summary available';
+        // Show AI analysis and structure info (but content is the main focus)
+        let aiSummary = page.contentSummary || 'No AI analysis available';
+        
+        // Add structural info only as supplementary data
         if (page.pageStructure) {
-          aiSummary += `\n\n📋 Structure: ${page.pageStructure}`;
+          aiSummary += `\n\n📋 Page Structure: ${page.pageStructure}`;
         }
         if (page.metaDescription) {
-          aiSummary += `\n\n📝 Meta: ${page.metaDescription}`;
+          aiSummary += `\n\n📝 Meta Description: ${page.metaDescription}`;
+        }
+        
+        // Add platform detection info if available
+        if (page.detectedPlatform) {
+          aiSummary += `\n\n🔧 Detected Platform: ${page.detectedPlatform}`;
+        }
+        if (page.hasElementor) {
+          aiSummary += ' (with Elementor)';
         }
 
         return {
