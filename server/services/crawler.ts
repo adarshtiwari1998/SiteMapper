@@ -226,6 +226,9 @@ export class WebsiteCrawler {
       // Only crawl same domain
       if (parsedUrl.origin !== this.baseUrl) return false;
       
+      // Skip fragment URLs (#id) - these are not real pages
+      if (parsedUrl.hash) return false;
+      
       // Skip files and non-HTML content
       const path = parsedUrl.pathname.toLowerCase();
       const skipExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.css', '.js', '.xml', '.txt', '.ico'];
