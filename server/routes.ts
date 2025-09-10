@@ -321,7 +321,14 @@ async function processAnalysisJob(jobId: string) {
         await sheetsService.exportToSheets(job.sheetsId, {
           websiteUrl: job.websiteUrl,
           technologies,
-          pages: finalPages
+          pages: finalPages.map(page => ({
+            ...page,
+            sectionsData: page.sectionsData as any[] || undefined,
+            imagesData: page.imagesData as any[] || undefined,
+            headingsData: page.headingsData as any[] || undefined,
+            metaDescription: page.metaDescription || undefined,
+            pageStructure: page.pageStructure || undefined
+          }))
         });
         
         await storage.updateAnalysisJob(jobId, { progress: 100 });
