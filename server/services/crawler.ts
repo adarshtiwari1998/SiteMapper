@@ -408,46 +408,73 @@ export class WebsiteCrawler {
       if ($main.length > 0) {
         console.log(`Extracting content from: ${selector}`);
         
-        // Extract content sections organized by headings
+        // SPECIFICALLY target Elementor structure: headings + their content containers
         $main.find('h1, h2, h3, h4, h5, h6').each((_, headingEl) => {
           const $heading = $(headingEl);
           const level = parseInt(headingEl.tagName.charAt(1));
           const title = $heading.text().trim();
           
-          if (title) {
+          if (title && !title.toLowerCase().includes('about us') && !title.toLowerCase().includes('quick links')) {
             let content = '';
             let images: string[] = [];
             
-            // Find the parent container of this heading
-            const $section = $heading.closest('div, section, article').length > 0 
-              ? $heading.closest('div, section, article') 
-              : $heading.parent();
+            console.log(`Processing heading: ${title}`);
             
-            // Extract all text content from this section (paragraphs, lists, divs)
-            $section.find('p, li, div').not($heading).each((_, contentEl) => {
-              const $contentEl = $(contentEl);
-              // Skip if this element contains other headings (to avoid mixing sections)
-              if ($contentEl.find('h1, h2, h3, h4, h5, h6').length === 0) {
-                const text = $contentEl.text().trim();
-                if (text && text.length > 5 && !content.includes(text)) {
-                  content += text + '\n';
-                }
-              }
-            });
+            // For Elementor: Look for the next elementor-widget-container or similar content containers
+            let $next = $heading.parent().next();
+            let attempts = 0;
             
-            // Also try to get content from next siblings until next heading
-            let $next = $heading.next();
-            while ($next.length && !$next.is('h1, h2, h3, h4, h5, h6')) {
-              const text = $next.text().trim();
-              if (text && text.length > 10 && !content.includes(text)) {
-                content += text + '\n';
+            // Search through multiple next siblings to find content
+            while ($next.length && attempts < 5) {
+              attempts++;
+              
+              // Target Elementor content containers specifically
+              const $contentContainer = $next.find('.elementor-widget-container, .elementor-text-editor');
+              if ($contentContainer.length > 0) {
+                $contentContainer.each((_, container) => {
+                  const $container = $(container);
+                  
+                  // Extract list items, paragraphs, and text content
+                  const listItems: string[] = [];
+                  $container.find('li').each((_, li) => {
+                    const itemText = $(li).text().trim();
+                    if (itemText && itemText.length > 2) {
+                      listItems.push(`• ${itemText}`);
+                    }
+                  });
+                  
+                  // Extract paragraph content
+                  const paragraphs: string[] = [];
+                  $container.find('p').each((_, p) => {
+                    const pText = $(p).text().trim();
+                    if (pText && pText.length > 10) {
+                      paragraphs.push(pText);
+                    }
+                  });
+                  
+                  // Combine list items and paragraphs
+                  if (listItems.length > 0) {
+                    content += listItems.join('\n') + '\n';
+                  }
+                  if (paragraphs.length > 0) {
+                    content += paragraphs.join('\n\n') + '\n';
+                  }
+                  
+                  // If no lists or paragraphs, get any text content
+                  if (listItems.length === 0 && paragraphs.length === 0) {
+                    const rawText = $container.text().trim();
+                    if (rawText && rawText.length > 10) {
+                      content += rawText + '\n';
+                    }
+                  }
+                });
               }
               
-              // Extract images in this section
-              $next.find('img').add($next.filter('img')).each((_, imgEl) => {
+              // Extract images from this container and nearby elements
+              $next.find('img').each((_, imgEl) => {
                 const $img = $(imgEl);
                 const src = $img.attr('src');
-                const alt = $img.attr('alt') || 'No description';
+                const alt = $img.attr('alt') || 'Image';
                 if (src) {
                   const fullSrc = src.startsWith('http') ? src : `https://www.ssfplastics.com${src}`;
                   images.push(`🖼️ ${alt}: ${fullSrc}`);
@@ -455,26 +482,51 @@ export class WebsiteCrawler {
               });
               
               $next = $next.next();
-              if (content.length > 4000) break;
+              if (content.length > 2000) break;
             }
             
-            // Extract images near the heading
-            $heading.siblings('img').add($heading.parent().find('img')).each((_, imgEl) => {
-              const $img = $(imgEl);
-              const src = $img.attr('src');
-              const alt = $img.attr('alt') || 'No description';
-              if (src) {
-                const fullSrc = src.startsWith('http') ? src : `https://www.ssfplastics.com${src}`;
-                images.push(`🖼️ ${alt}: ${fullSrc}`);
-              }
-            });
+            // Also check the heading's parent container for nearby content
+            const $headingParent = $heading.closest('.elementor-element, .elementor-container');
+            if ($headingParent.length > 0) {
+              $headingParent.find('.elementor-widget-container').not($heading.closest('.elementor-widget-container')).each((_, container) => {
+                const $container = $(container);
+                const containerText = $container.text().trim();
+                if (containerText && containerText.length > 10 && !content.includes(containerText)) {
+                  // Check for lists
+                  const listItems: string[] = [];
+                  $container.find('li').each((_, li) => {
+                    const itemText = $(li).text().trim();
+                    if (itemText && itemText.length > 2) {
+                      listItems.push(`• ${itemText}`);
+                    }
+                  });
+                  
+                  if (listItems.length > 0) {
+                    content += listItems.join('\n') + '\n';
+                  } else {
+                    content += containerText + '\n';
+                  }
+                }
+              });
+            }
             
-            // Clean up content and combine with images
-            content = content.trim().replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ');
-            const fullContent = [
-              content || 'No detailed content found for this section',
-              images.length > 0 ? '\nImages:\n' + images.join('\n') : ''
-            ].filter(Boolean).join('');
+            // Clean up content and format properly
+            content = content.trim().replace(/\n\s*\n+/g, '\n').replace(/\s+/g, ' ');
+            
+            // Combine content with inline images
+            let fullContent = '';
+            if (content && content.length > 10) {
+              fullContent = content;
+              
+              // Add images inline with content, not at the end
+              if (images.length > 0) {
+                fullContent += '\n\n' + images.join('\n');
+              }
+            } else {
+              fullContent = images.length > 0 ? images.join('\n') : 'No detailed content found for this section';
+            }
+            
+            console.log(`Content found for ${title}: ${fullContent.substring(0, 100)}...`);
             
             sections.push({
               type: 'heading',
@@ -486,38 +538,6 @@ export class WebsiteCrawler {
           }
         });
         
-        // Extract any standalone content blocks that aren't under headings
-        $main.children().each((_, element) => {
-          const $el = $(element);
-          if (!$el.is('h1, h2, h3, h4, h5, h6') && !$el.find('h1, h2, h3, h4, h5, h6').length) {
-            const text = $el.text().trim();
-            if (text && text.length > 100) {
-              let images: string[] = [];
-              $el.find('img').each((_, imgEl) => {
-                const $img = $(imgEl);
-                const src = $img.attr('src');
-                const alt = $img.attr('alt') || 'No description';
-                if (src) {
-                  const fullSrc = src.startsWith('http') ? src : `https://www.ssfplastics.com${src}`;
-                  images.push(`🖼️ ${alt}: ${fullSrc}`);
-                }
-              });
-              
-              const fullContent = [
-                text,
-                images.length > 0 ? '\nImages:\n' + images.join('\n') : ''
-              ].filter(Boolean).join('');
-              
-              sections.push({
-                type: 'content',
-                title: '📄 Content Block',
-                content: fullContent,
-                position: position++
-              });
-            }
-          }
-        });
-        
         break; // Found main content, stop looking
       }
     }
@@ -526,17 +546,30 @@ export class WebsiteCrawler {
   private extractFooterContent($: cheerio.CheerioAPI, sections: PageSection[], startPosition: number): void {
     let position = startPosition;
     
-    $('footer, .footer, #footer, .site-footer').each((_, element) => {
+    $('footer, .footer, #footer, .site-footer').first().each((_, element) => {
       const $footer = $(element);
       
-      // Extract footer content cleanly
-      const footerText = $footer.text().trim().replace(/\s+/g, ' ');
+      // Extract only actual footer content, not navigation links that belong to main content
+      let footerText = '';
+      
+      // Get copyright, contact info, but skip main navigation
+      $footer.contents().each((_, node) => {
+        const $node = $(node);
+        if ($node.is('p, div') && !$node.find('a').length) {
+          const text = $node.text().trim();
+          if (text.includes('©') || text.includes('copyright') || text.includes('@') || text.includes('+91')) {
+            footerText += text + ' ';
+          }
+        }
+      });
+      
+      footerText = footerText.trim().replace(/\s+/g, ' ');
       
       if (footerText && footerText.length > 20) {
         sections.push({
           type: 'navigation',
           title: '🔽 FOOTER SECTION',
-          content: this.truncateText(footerText, 600),
+          content: this.truncateText(footerText, 300),
           position: position++
         });
       }

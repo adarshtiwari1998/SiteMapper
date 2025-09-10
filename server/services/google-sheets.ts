@@ -147,7 +147,10 @@ export class GoogleSheetsService {
           completeContent = page.sectionsData.map((section: any) => {
             const sectionIcon = this.getSectionIcon(section.type);
             const sectionTitle = section.title || 'Content Section';
-            const content = section.content || 'No content';
+            let content = section.content || 'No content';
+            
+            // Convert image URLs to Google Sheets IMAGE formulas for previews
+            content = this.convertImagesToSheetsFormulas(content);
             return `${sectionIcon} ${sectionTitle}\n${content}`;
           }).join('\n\n---\n\n');
         }
@@ -162,17 +165,7 @@ export class GoogleSheetsService {
           completeContent += `\n\n📝 Meta Description: ${page.metaDescription}`;
         }
         
-        // Add additional images not already included in sections
-        if (page.imagesData && Array.isArray(page.imagesData)) {
-          const additionalImages = page.imagesData.map((img: any) => {
-            const altText = img.alt ? ` - ${img.alt}` : '';
-            return `🖼️ ${img.src}${altText}`;
-          }).join('\n');
-          
-          if (additionalImages) {
-            completeContent += `\n\n🖼️ Additional Images:\n${additionalImages}`;
-          }
-        }
+        // NOTE: Removed "Additional Images" section - images are now inline with content
 
         // Enhanced AI summary
         let aiSummary = page.contentSummary || 'No summary available';
@@ -425,6 +418,15 @@ export class GoogleSheetsService {
   private truncateText(text: string, length: number): string {
     if (!text) return '';
     return text.length > length ? text.substring(0, length) + '...' : text;
+  }
+
+  private convertImagesToSheetsFormulas(content: string): string {
+    // Convert image URLs to Google Sheets =IMAGE() formulas for previews
+    const imageRegex = /🖼️\s*([^:]+):\s*(https?:\/\/[^\s]+)/g;
+    return content.replace(imageRegex, (match, alt, url) => {
+      // Create Google Sheets IMAGE formula with size constraints
+      return `🖼️ ${alt}\n=IMAGE("${url}", 1)`;
+    });
   }
 
   private async formatSheetsWithAutoResize(doc: GoogleSpreadsheet): Promise<void> {
