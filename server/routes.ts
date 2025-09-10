@@ -166,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get default configuration
   app.get("/api/configurations/default", async (req, res) => {
     try {
-      const config = await storage.getDefaultConfiguration(null); // No user auth for now
+      const config = await storage.getDefaultConfiguration(undefined); // No user auth for now
       res.json(config || null);
     } catch (error) {
       console.error("Error fetching default configuration:", error);
@@ -177,7 +177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all configurations
   app.get("/api/configurations", async (req, res) => {
     try {
-      const configs = await storage.getAllConfigurations(null); // No user auth for now
+      const configs = await storage.getAllConfigurations(undefined); // No user auth for now
       res.json(configs);
     } catch (error) {
       console.error("Error fetching configurations:", error);

@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FileUpload } from "@/components/ui/file-upload";
 import { api } from "@/lib/api";
 import type { AnalysisJob, UserConfiguration } from "@shared/schema";
-import { Globe, Table, Brain, Cog, Play, Save, Check, Eye, EyeOff } from "lucide-react";
+import { Globe, Table, Brain, Cog, Play, Save, Check, Eye, EyeOff, ChevronDown, ChevronUp, Trash2, Edit3 } from "lucide-react";
 
 const formSchema = z.object({
   websiteUrl: z.string().url("Please enter a valid URL"),
@@ -35,6 +35,7 @@ interface ConfigurationPanelProps {
 export default function ConfigurationPanel({ onJobCreated }: ConfigurationPanelProps) {
   const [serviceAccountJson, setServiceAccountJson] = useState<any>(null);
   const [showGlmKey, setShowGlmKey] = useState(false);
+  const [showSavedConfigs, setShowSavedConfigs] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<{
     sheets?: boolean;
     glm?: boolean;
@@ -131,6 +132,29 @@ export default function ConfigurationPanel({ onJobCreated }: ConfigurationPanelP
     },
   });
 
+  const saveConfigurationMutation = useMutation({
+    mutationFn: api.saveConfiguration,
+    onSuccess: () => {
+      toast({
+        title: "Configuration Saved",
+        description: "Your configuration has been saved successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Save Failed",
+        description: error.message || "Failed to save configuration.",
+      });
+    },
+  });
+
+  const { data: savedConfigurations, refetch: refetchConfigurations } = useQuery({
+    queryKey: ['configurations'],
+    queryFn: api.getAllConfigurations,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
   const handleServiceAccountUpload = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -176,6 +200,42 @@ export default function ConfigurationPanel({ onJobCreated }: ConfigurationPanelP
       return;
     }
     testGlmMutation.mutate(apiKey);
+  };
+
+  const handleSaveConfiguration = () => {
+    const formData = form.getValues();
+    const configData = {
+      configName: `Config-${new Date().toISOString().split('T')[0]}-${new Date().toLocaleTimeString()}`,
+      websiteUrl: formData.websiteUrl,
+      technologyType: formData.technologyType,
+      maxPages: formData.maxPages,
+      includeImages: formData.includeImages,
+      deepAnalysis: formData.deepAnalysis,
+      sheetsId: formData.sheetsId,
+      glmApiKey: formData.glmApiKey,
+      serviceAccountJson: serviceAccountJson,
+    };
+
+    saveConfigurationMutation.mutate(configData);
+    refetchConfigurations();
+  };
+
+  const handleLoadConfiguration = (config: UserConfiguration) => {
+    form.setValue('websiteUrl', config.websiteUrl || '');
+    form.setValue('technologyType', config.technologyType || 'auto');
+    form.setValue('maxPages', config.maxPages || 100);
+    form.setValue('includeImages', config.includeImages ?? true);
+    form.setValue('deepAnalysis', config.deepAnalysis ?? false);
+    form.setValue('sheetsId', config.sheetsId || '');
+    form.setValue('glmApiKey', config.glmApiKey || '');
+    if (config.serviceAccountJson) {
+      setServiceAccountJson(config.serviceAccountJson);
+    }
+    
+    toast({
+      title: "Configuration Loaded",
+      description: `Configuration "${config.configName}" has been loaded.`,
+    });
   };
 
   const onSubmit = (data: FormData) => {
@@ -422,11 +482,74 @@ export default function ConfigurationPanel({ onJobCreated }: ConfigurationPanelP
               type="button"
               variant="secondary"
               className="w-full"
+              onClick={handleSaveConfiguration}
+              disabled={saveConfigurationMutation.isPending}
               data-testid="button-save-config"
             >
               <Save className="mr-2 h-4 w-4" />
-              Save Configuration
+              {saveConfigurationMutation.isPending ? "Saving..." : "Save Configuration"}
             </Button>
+            
+            {/* Saved Configurations Section */}
+            {savedConfigurations && savedConfigurations.length > 0 && (
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-between"
+                  onClick={() => setShowSavedConfigs(!showSavedConfigs)}
+                >
+                  <span className="flex items-center">
+                    <Edit3 className="mr-2 h-4 w-4" />
+                    Saved Configurations ({savedConfigurations.length})
+                  </span>
+                  {showSavedConfigs ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+                
+                {showSavedConfigs && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {savedConfigurations.map((config: UserConfiguration) => (
+                      <div key={config.id} className="p-3 bg-secondary/50 rounded-md border">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-medium truncate" title={config.configName}>
+                            {config.configName}
+                          </h4>
+                          <span className="text-xs text-muted-foreground">
+                            {config.createdAt ? new Date(config.createdAt).toLocaleDateString() : ''}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mb-2">
+                          {config.websiteUrl && (
+                            <div className="truncate" title={config.websiteUrl}>
+                              🌐 {config.websiteUrl}
+                            </div>
+                          )}
+                          {config.sheetsId && (
+                            <div className="truncate" title={config.sheetsId}>
+                              📊 Sheets: {config.sheetsId.substring(0, 20)}...
+                            </div>
+                          )}
+                          {config.glmApiKey && (
+                            <div>🤖 GLM API configured</div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 text-xs h-7"
+                            onClick={() => handleLoadConfiguration(config)}
+                          >
+                            Load
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </form>
       </div>
